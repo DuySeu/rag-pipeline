@@ -1,0 +1,6 @@
+{"question": "Nhân viên chính thức có bao nhiêu ngày phép năm?", "reference": "Nhân viên chính thức có 12 ngày phép năm có lương, cứ đủ 5 năm làm việc được cộng thêm 1 ngày.", "sources": ["nghi-phep.md"]}
+{"question": "Ngày phép chưa dùng có được chuyển sang năm sau không?", "reference": "Được chuyển tối đa 5 ngày và phải dùng trước ngày 31 tháng 3; phần vượt quá bị huỷ, không quy đổi thành tiền.", "sources": ["nghi-phep.md"]}
+{"question": "Mỗi tuần được làm việc từ xa tối đa mấy ngày?", "reference": "Nhân viên đã qua thử việc được làm từ xa tối đa 2 ngày mỗi tuần.", "sources": ["lam-viec-tu-xa.md"]}
+{"question": "Công ty hỗ trợ tiền internet khi làm từ xa bao nhiêu?", "reference": "Công ty hỗ trợ 300.000 đồng mỗi tháng, trả cùng kỳ lương.", "sources": ["lam-viec-tu-xa.md"]}
+{"question": "Phụ cấp ăn uống khi đi công tác nước ngoài là bao nhiêu?", "reference": "Phụ cấp ăn uống khi công tác nước ngoài là 50 USD mỗi ngày.", "sources": ["cong-tac-phi.md"]}
+{"question": "Hạn nộp báo cáo chi phí công tác là khi nào?", "reference": "Trong vòng 10 ngày làm việc sau khi kết thúc chuyến công tác; nộp trễ sẽ không được thanh toán.", "sources": ["cong-tac-phi.md"]}

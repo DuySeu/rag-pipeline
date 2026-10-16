@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+import argparse
+import logging
+from pathlib import Path
+
+from ingestion.pipeline import build_chunks, ingest
+from rag_core.openrouter import make_client, make_embedder
+from rag_core.settings import load_settings
+
+logger = logging.getLogger(__name__)
+
+
+# Chunk and embed the docs folder into the vector store
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Ingest documents into the vector store")
+    parser.add_argument("--docs", type=Path, default=Path("data/docs"))
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    settings = load_settings()
+
+    chunks = build_chunks(args.docs, settings.chunk_size, settings.chunk_overlap)
+    logger.info("Built %d chunks from %s", len(chunks), args.docs)
+
+    embed = make_embedder(make_client(settings), settings.embed_model)
+    stored = ingest(chunks, settings, embed)
+    logger.info("Stored %d chunks in %s/%s", stored, settings.chroma_dir, settings.collection)
+
+
+if __name__ == "__main__":
+    main()

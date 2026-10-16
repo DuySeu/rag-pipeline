@@ -1,0 +1,28 @@
+{
+  "documents": 3,
+  "expected_chunks": 3,
+  "stored_chunks": 0,
+  "documents_not_in_store": [
+    "cong-tac-phi.md",
+    "lam-viec-tu-xa.md",
+    "nghi-phep.md"
+  ],
+  "missing_chunks": [
+    "cong-tac-phi.md#0",
+    "lam-viec-tu-xa.md#0",
+    "nghi-phep.md#0"
+  ],
+  "stale_chunks": [],
+  "duplicate_chunks": 0,
+  "chunk_chars": {
+    "min": 0,
+    "mean": 0,
+    "max": 0
+  },
+  "golden_sources_not_in_store": [
+    "cong-tac-phi.md",
+    "lam-viec-tu-xa.md",
+    "nghi-phep.md"
+  ],
+  "passed": false
+}
