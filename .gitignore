@@ -8,4 +8,5 @@ __pycache__/
 .agents
 skills-lock.json
 
-data/
+data/docs/*
+!data/docs/.gitkeep
