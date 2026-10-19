@@ -26,6 +26,9 @@ def settings(tmp_path: Path) -> Settings:
         chunk_size=40,
         chunk_overlap=10,
         top_k=2,
+        embed_query_prefix="query: ",
+        embed_passage_prefix="passage: ",
+        max_distance=None,
     )
 
 
@@ -36,5 +39,5 @@ def docs_dir(tmp_path: Path) -> Path:
     (docs / "leave.md").write_text("leave policy: twelve leave days per year", encoding="utf-8")
     (docs / "remote.md").write_text("remote work: two remote days per week", encoding="utf-8")
     (docs / "travel.txt").write_text("travel allowance: travel meals paid daily", encoding="utf-8")
-    (docs / "ignored.pdf").write_text("not a supported file", encoding="utf-8")
+    (docs / "ignored.csv").write_text("not a supported file", encoding="utf-8")
     return docs

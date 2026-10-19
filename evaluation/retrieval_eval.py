@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import statistics
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from ragas.metrics.collections import (
 )
 
 from evaluation.golden import load_golden
+from rag_core.errors import CliError
 from rag_core.openrouter import make_async_client, make_client, make_embedder
 from rag_core.settings import load_settings
 from rag_core.store import open_collection
@@ -61,7 +63,7 @@ async def run() -> dict[str, Any]:
     client = make_client(settings)
     async_client = make_async_client(settings)
     collection = open_collection(settings)
-    embed = make_embedder(client, settings.embed_model)
+    embed = make_embedder(client, settings.embed_model, settings.embed_query_prefix)
 
     # The judge uses the same OpenRouter models as the pipeline
     judge = llm_factory(settings.chat_model, provider="openai", client=async_client)
@@ -79,23 +81,23 @@ async def run() -> dict[str, Any]:
     # ponytail: samples run one at a time to stay under free-tier rate limits, gather() if paid
     for number, sample in enumerate(golden, start=1):
         logger.info("Scoring %d/%d: %s", number, len(golden), sample.question)
-        chunks = retrieve(sample.question, collection, embed, settings.top_k)
+        chunks = retrieve(sample.question, collection, embed, settings)
         answer = generate_answer(sample.question, chunks, client, settings.chat_model)
         contexts = [c.text for c in chunks]
 
         row = {
             "question": sample.question,
-            "answer": answer,
+            "answer": answer.text,
             "retrieved_sources": [c.source for c in chunks],
             "expected_sources": list(sample.sources),
             "hit_rank": first_hit_rank([c.source for c in chunks], sample.sources),
             "faithfulness": (
                 await faithfulness.ascore(
-                    user_input=sample.question, response=answer, retrieved_contexts=contexts
+                    user_input=sample.question, response=answer.text, retrieved_contexts=contexts
                 )
             ).value,
             "answer_relevancy": (
-                await answer_relevancy.ascore(user_input=sample.question, response=answer)
+                await answer_relevancy.ascore(user_input=sample.question, response=answer.text)
             ).value,
             "context_precision": (
                 await context_precision.ascore(
@@ -126,7 +128,12 @@ async def run() -> dict[str, Any]:
 # Run the retrieval evaluation and print the summary
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    print(json.dumps(asyncio.run(run()), indent=2))
+    try:
+        print(json.dumps(asyncio.run(run()), indent=2))
+    except CliError as exc:
+        # Rows already written to the samples file stay for the next run to compare
+        print(f"[ERROR {exc.kind.name}] {exc}", file=sys.stderr)
+        sys.exit(exc.kind.value)
 
 
 if __name__ == "__main__":
