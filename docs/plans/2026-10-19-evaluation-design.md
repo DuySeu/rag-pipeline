@@ -2,7 +2,7 @@
 
 Trạng thái: hoãn, làm sau khi xong ingestion và retrieval. Người dùng chốt tập trung vào hai pipeline trước; tài liệu này giữ thiết kế đánh giá đã thống nhất để làm sau. Nó áp dụng spec đánh giá của người dùng ở `docs/benchmark.md` (dữ liệu, ground truth, hai tầng retrieval và generation, metric, hiệu chỉnh judge, metric tuỳ chọn) vào repo này; khi tài liệu này và `docs/benchmark.md` khác nhau, `docs/benchmark.md` là nguồn gốc. Những gì hai pipeline phải sinh ra để đánh giá được nằm ở `docs/plans/2026-10-19-ingestion-pipeline-design.md` và `docs/plans/2026-10-19-retrieval-pipeline-design.md`.
 
-Trong lúc hoãn, quy tắc "retrieval changes are eval-driven" của `CLAUDE.md` vẫn giữ nguyên, nên giá trị `MAX_DISTANCE`, việc đổi `TOP_K`, `EVIDENCE_OVERLAP_MIN` và mọi target metric là (pending) cho tới khi eval chạy được.
+Trong lúc hoãn, quy tắc "retrieval changes are eval-driven" của `CLAUDE.md` vẫn giữ nguyên, nên giá trị `max_distance`, việc đổi `top_k`, `evidence_overlap_min` và mọi target metric là (pending) cho tới khi eval chạy được.
 
 ## Quyết định đã chốt
 
@@ -49,7 +49,7 @@ Mục tiêu khoảng 10 câu cho mỗi loại, tổng khoảng 60 câu. Thay cho
 | `not_in_corpus` | thông tin không có trong corpus, gồm cả câu cùng chủ đề | `refuse` | khoảng 10 | 0 |
 | `ambiguous` | có nhiều cách hiểu hợp lý với context lấy về | `clarify` | khoảng 10 | 0 |
 
-Các câu `answer` phải phủ mọi định dạng file có trong corpus thật (`.md`, `.txt`, `.docx`, `.xlsx`, `.pptx`, `.pdf`), kể cả câu mà câu trả lời chỉ nằm trong speaker notes của `.pptx`. Phân bố chính xác theo định dạng là (pending) tới khi có corpus thật. Số đoạn evidence của một câu không nên vượt `TOP_K`, nếu không `all_evidence_hit@k` không bao giờ đạt.
+Các câu `answer` phải phủ mọi định dạng file có trong corpus thật (`.md`, `.txt`, `.docx`, `.xlsx`, `.pptx`, `.pdf`), kể cả câu mà câu trả lời chỉ nằm trong speaker notes của `.pptx`. Phân bố chính xác theo định dạng là (pending) tới khi có corpus thật. Số đoạn evidence của một câu không nên vượt `top_k`, nếu không `all_evidence_hit@k` không bao giờ đạt.
 
 ## Schema ground truth
 
@@ -114,7 +114,7 @@ Một chunk khớp một evidence khi cả ba điều kiện đúng:
 Chuẩn hoá cả span và text chunk: Unicode NFC, chữ thường, gộp mọi khoảng trắng liên tiếp thành một dấu cách. Quy tắc khớp:
 
 1. Span đã chuẩn hoá là chuỗi con của text chunk đã chuẩn hoá: khớp.
-2. Ngược lại, tính tỉ lệ phủ token: số token của span có trong chunk (đếm theo multiset) chia cho số token của span. Token là âm tiết tách theo khoảng trắng sau khi bỏ dấu câu, không dùng tokenizer hay stemmer tiếng Anh. Khớp khi tỉ lệ >= `EVIDENCE_OVERLAP_MIN`, giá trị (pending), chọn bằng cách xem các trường hợp span bị cắt ngang ranh giới chunk trong `retrieval_samples.jsonl`.
+2. Ngược lại, tính tỉ lệ phủ token: số token của span có trong chunk (đếm theo multiset) chia cho số token của span. Token là âm tiết tách theo khoảng trắng sau khi bỏ dấu câu, không dùng tokenizer hay stemmer tiếng Anh. Khớp khi tỉ lệ >= `evidence_overlap_min`, giá trị (pending), chọn bằng cách xem các trường hợp span bị cắt ngang ranh giới chunk trong `retrieval_samples.jsonl`.
 
 Quy tắc 2 xử lý trường hợp span nằm vắt qua hai chunk liền kề. Chunk không bao giờ vượt ranh giới trang, sheet hoặc slide (thiết kế loader), nên mỗi chunk có đúng một locator. Hàm khớp nằm trong một module mới `evaluation/evidence.py`, dùng chung cho `retrieval_eval` và `ingestion_eval`.
 
@@ -128,13 +128,13 @@ Quy tắc 2 xử lý trường hợp span nằm vắt qua hai chunk liền kề.
 `retrieval_eval` có hai mode, mặc định chạy cả hai và báo cạnh nhau:
 
 - `e2e`: pipeline đầy đủ, retrieve rồi generate. Tính cả lớp 1 và lớp 2.
-- `gold`: bỏ qua retrieval, đưa thẳng các span trong `gold_evidence` làm context cho `generate_answer` (mỗi span thành một `RetrievedChunk` với `source = doc_id`, locator theo `page`, distance 0, không áp ngưỡng). Chỉ tính lớp 2. Với câu `refuse` (không có gold evidence), context là `TOP_K` chunk retrieve được nhưng không áp ngưỡng, để đo việc LLM tự từ chối khi context không chứa câu trả lời. Với câu `clarify`, context là các span gold nếu có, không thì như câu `refuse`.
+- `gold`: bỏ qua retrieval, đưa thẳng các span trong `gold_evidence` làm context cho `generate_answer` (mỗi span thành một `RetrievedChunk` với `source = doc_id`, locator theo `page`, distance 0, không áp ngưỡng). Chỉ tính lớp 2. Với câu `refuse` (không có gold evidence), context là `top_k` chunk retrieve được nhưng không áp ngưỡng, để đo việc LLM tự từ chối khi context không chứa câu trả lời. Với câu `clarify`, context là các span gold nếu có, không thì như câu `refuse`.
 
 Chênh lệch giữa `gold` và `e2e` trên cùng metric lớp 2 cho biết lỗi nằm ở retrieval hay ở generation. Chi phí: mode `gold` gần như nhân đôi số lời gọi chat và judge mỗi câu. Với free tier và chạy tuần tự (`evaluation/retrieval_eval.py:79`), thời gian chạy và quota cũng gần gấp đôi. Thêm cờ `--mode e2e|gold|both` để chạy riêng một mode khi cần tiết kiệm quota. Quota là giới hạn request ngày của model free tier (người dùng chốt, xem retrieval doc, mục "Rate limit và hết quota"): gặp lỗi quota (exit code 7) hoặc rate limit sau khi SDK đã retry (exit code 6), `retrieval_eval` dừng cả lần chạy, giữ các dòng đã ghi trong `retrieval_samples.jsonl` (`evaluation/retrieval_eval.py:117-119`) và không ghi summary.
 
 ## Metric lớp retrieval
 
-Tính trên câu `expected_behavior = answer`, mode `e2e`, tự động, không gọi LLM. Với `k = TOP_K`:
+Tính trên câu `expected_behavior = answer`, mode `e2e`, tự động, không gọi LLM. Với `k = top_k`:
 
 | Metric | Định nghĩa |
 | --- | --- |
@@ -189,7 +189,7 @@ Judge key-fact là một prompt riêng trong module mới `evaluation/judge.py`,
 
 ## Judge và hiệu chỉnh
 
-- Thêm setting `JUDGE_MODEL` đọc từ env qua `rag_core/settings.py`, dùng cho RAGAS (thay `settings.chat_model` ở `evaluation/retrieval_eval.py:67`), cho `evaluation/judge.py` và cho bước sinh nháp golden set. `retrieval_eval` dừng khi `JUDGE_MODEL` rỗng hoặc bằng `CHAT_MODEL`. Model cụ thể chưa chọn (câu hỏi mở); cần một model free tier khác `CHAT_MODEL`. Khi bỏ RAGAS `AnswerRelevancy`, judge không còn cần embedding (`evaluation/retrieval_eval.py:68` bỏ được).
+- Thêm setting `JUDGE_MODEL` đọc từ env qua `core.py`, dùng cho RAGAS (thay `settings.chat_model` ở `evaluation/retrieval_eval.py:67`), cho `evaluation/judge.py` và cho bước sinh nháp golden set. `retrieval_eval` dừng khi `JUDGE_MODEL` rỗng hoặc bằng `CHAT_MODEL`. Model cụ thể chưa chọn (câu hỏi mở); cần một model free tier khác `CHAT_MODEL`. Khi bỏ RAGAS `AnswerRelevancy`, judge không còn cần embedding (`evaluation/retrieval_eval.py:68` bỏ được).
 - `evaluation/judge.py` có hằng số `JUDGE_PROMPT_VERSION`; mọi thay đổi prompt judge phải tăng giá trị này. `retrieval_summary.json` ghi `judge_model` và `judge_prompt_version`; hai lần chạy khác một trong hai giá trị không so sánh được trực tiếp.
 - Hiệu chỉnh (đã chốt: người dùng sẽ gán nhãn tay): người dùng gán nhãn tay 50-100 mẫu (câu hỏi, câu trả lời) cho các quyết định của judge: từng key fact có hay không, có mâu thuẫn không, có từ chối không, có hỏi lại không, điểm answer relevance. Với golden set khoảng 60 câu, 50-100 mẫu gần bằng toàn bộ golden set ở một lần chạy; có thể lấy thêm mẫu từ mode `gold` để đủ 100. Nhãn lưu ở `evaluation/datasets/judge_labels.jsonl`, script `evaluation/judge_calibration.py` tính Cohen's kappa và % đồng thuận trên từng loại quyết định, không gọi API ngoài judge, tự tính kappa không thêm dependency.
 - Chỉ tin metric có judge khi kappa >= 0.7 (ngưỡng ví dụ trong spec, dùng làm mặc định). Dưới ngưỡng thì sửa prompt hoặc đổi `JUDGE_MODEL` rồi hiệu chỉnh lại; trong lúc đó `answer_accuracy` chỉ được báo kèm cảnh báo, không dùng để giữ hay bỏ thay đổi.
@@ -213,13 +213,13 @@ Robustness và consistency tốn thêm quota tỉ lệ với số biến thể, 
 
 `retrieval_summary.json`: `corpus_hash`, `golden_hash`, cấu hình chunk và `embed_model` đọc từ store, `chat_model`, `judge_model`, `judge_prompt_version`, `top_k`, `max_distance`, `evidence_overlap_min`; với mỗi mode: mọi metric trên toàn bộ và tách theo `metadata.type`, `metadata.difficulty`, định dạng file của `doc_id`; latency p50/p95, tổng token.
 
-## Chọn ngưỡng `MAX_DISTANCE`
+## Chọn ngưỡng `max_distance`
 
 Cơ chế ngưỡng thuộc retrieval doc; giá trị được chọn bằng eval theo quy tắc eval-driven:
 
-1. Có golden set theo schema mới, gồm câu `refuse`, chạy `retrieval_eval` khi chưa đặt `MAX_DISTANCE`. Đây là baseline.
+1. Có golden set theo schema mới, gồm câu `refuse`, chạy `retrieval_eval` khi chưa đặt `max_distance`. Đây là baseline.
 2. Từ `retrieved` (distance của từng chunk trước khi lọc) trong `retrieval_samples.jsonl`, xem phân bố distance của chunk top-1 ở câu `answer` và câu `refuse`, chọn một giá trị ứng viên.
-3. Đặt `MAX_DISTANCE` bằng giá trị đó, không đổi gì khác, chạy lại `retrieval_eval`.
+3. Đặt `max_distance` bằng giá trị đó, không đổi gì khác, chạy lại `retrieval_eval`.
 4. Giữ ngưỡng khi `answer_accuracy` tăng và các metric bảo vệ, nhất là `recall@k` và `false_refusal_rate`, không xấu đi. Báo số từ `evaluation/reports/retrieval_summary.json`.
 5. Ngưỡng gắn với embed model: đổi `EMBED_MODEL` là phải chọn lại ngưỡng.
 
@@ -228,9 +228,9 @@ Cơ chế ngưỡng thuộc retrieval doc; giá trị được chọn bằng eva
 Thay `golden_sources_not_in_store` (`evaluation/ingestion_eval.py:48`, nguồn dữ liệu ở `evaluation/ingestion_eval.py:68`) bằng hai mục, cả hai làm fail:
 
 - `gold_doc_ids_not_in_store`: `doc_id` trong gold evidence không có chunk nào trong store.
-- `gold_evidence_not_matchable`: gold evidence (theo `qid`) không khớp được chunk nào trong store, theo quy tắc khớp trong `evaluation/evidence.py` với `EVIDENCE_OVERLAP_MIN`.
+- `gold_evidence_not_matchable`: gold evidence (theo `qid`) không khớp được chunk nào trong store, theo quy tắc khớp trong `evaluation/evidence.py` với `evidence_overlap_min`.
 
-Mục thứ hai bắt các lỗi sau trước khi tốn quota chạy `retrieval_eval`: span gõ sai, span lệch chuẩn hoá, locator sai, hoặc evidence bị cắt ngang ranh giới chunk sau khi đổi `CHUNK_SIZE`. Ingestion cung cấp metadata để khớp (`source`, `page`/`sheet`/`slide`, text NFC); xem ingestion doc, mục "Phần ingestion phục vụ đánh giá".
+Mục thứ hai bắt các lỗi sau trước khi tốn quota chạy `retrieval_eval`: span gõ sai, span lệch chuẩn hoá, locator sai, hoặc evidence bị cắt ngang ranh giới chunk sau khi đổi `chunk_size`. Ingestion cung cấp metadata để khớp (`source`, `page`/`sheet`/`slide`, text NFC); xem ingestion doc, mục "Phần ingestion phục vụ đánh giá".
 
 ## Metric mục tiêu và metric bảo vệ
 
@@ -269,7 +269,7 @@ Thứ tự để có baseline: implement ingestion và retrieval pipeline theo h
 
 | File | Thay đổi |
 | --- | --- |
-| `rag_core/settings.py:8-31` | thêm `judge_model` (`JUDGE_MODEL`), `evidence_overlap_min` (`EVIDENCE_OVERLAP_MIN`); `MAX_DISTANCE` thuộc thay đổi pipeline |
+| `core.py:55-127` | thêm `judge_model` (`JUDGE_MODEL`), `evidence_overlap_min` (trong `config.yaml`); `max_distance` thuộc thay đổi pipeline |
 | retrieval pipeline | các thay đổi pipeline (trích dẫn, `Answer`, `locator`, ngưỡng, clarify, `usage`) nằm ở retrieval doc, mục "Thay đổi code cần làm"; eval chỉ dùng kết quả |
 | `evaluation/golden.py:7-31` | `GoldenSample` theo schema mới, kiểm tra như mục "Schema ground truth" |
 | `evaluation/datasets/golden.jsonl` | chuyển 6 câu sang schema mới, rồi mở rộng tới khoảng 60 câu |
@@ -303,10 +303,10 @@ Mọi test không gọi mạng; judge và chat model được thay bằng hàm g
 
 ## Quy trình thay đổi
 
-Theo `CLAUDE.md`, mọi thay đổi chunking, embed model, `TOP_K`, prompt, ngưỡng hay cách retrieve đi theo các bước:
+Theo `CLAUDE.md`, mọi thay đổi chunking, embed model, `top_k`, prompt, ngưỡng hay cách retrieve đi theo các bước:
 
 1. Chạy `retrieval_eval` trên cấu hình hiện tại, lưu `retrieval_summary.json` làm mốc. Kiểm tra `corpus_hash`, `golden_hash`, `judge_model`, `judge_prompt_version` của mốc.
-2. Đổi đúng một biến. Nếu biến đó ảnh hưởng tới store (`EMBED_MODEL`, `CHUNK_SIZE`, `CHUNK_OVERLAP`, loader), chạy lại ingestion và `ingestion_eval`.
+2. Đổi đúng một biến. Nếu biến đó ảnh hưởng tới store (`EMBED_MODEL`, `chunk_size`, `chunk_overlap`, loader), chạy lại ingestion và `ingestion_eval`.
 3. Chạy lại `retrieval_eval`; chỉ so khi `corpus_hash`, `golden_hash`, `judge_model`, `judge_prompt_version` giống mốc.
 4. Chỉ giữ thay đổi khi `answer_accuracy` (`e2e`) tăng và các metric bảo vệ không xấu đi. Nếu chênh lệch nhỏ, thêm câu hỏi vào golden set trước khi kết luận.
 5. Khi `recall@k` thấp, đọc `retrieval_samples.jsonl` để xem evidence có bị cắt ngang ranh giới chunk không, trước khi đổi embed model. Khi `answer_accuracy` ở `gold` cũng thấp, lỗi nằm ở generation, không phải retrieval.

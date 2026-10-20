@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import argparse
-import json
 import statistics
-import sys
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
@@ -11,11 +8,9 @@ from typing import Any
 
 from chromadb.api.models.Collection import Collection
 
-from evaluation.golden import load_golden
+from core import Settings
 from ingestion.corpus import corpus_hash, load_documents
 from ingestion.pipeline import chunk_documents, collection_metadata
-from rag_core.settings import Settings, load_settings
-from rag_core.store import open_collection
 
 REPORT_PATH = Path("evaluation/reports/ingestion.json")
 
@@ -25,7 +20,9 @@ def evaluate_ingestion(
     docs_dir: Path, settings: Settings, collection: Collection, golden_sources: Sequence[str]
 ) -> dict[str, Any]:
     documents = load_documents(docs_dir)
-    expected = chunk_documents(documents, settings.chunk_size, settings.chunk_overlap)
+    expected = chunk_documents(
+        documents, settings.chunk_size, settings.chunk_overlap, settings.chunk_strategy
+    )
     expected_ids = {c.id for c in expected}
     expected_sources = {c.source for c in expected}
 
@@ -81,23 +78,3 @@ def evaluate_ingestion(
         or report["config_mismatch"]
     )
     return report
-
-
-# Run the ingestion check, write the report and exit non-zero on failure
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Check the vector store against the docs folder")
-    parser.add_argument("--docs", type=Path, default=Path("data/docs"))
-    args = parser.parse_args()
-
-    settings = load_settings()
-    golden_sources = [s for sample in load_golden() for s in sample.sources]
-    report = evaluate_ingestion(args.docs, settings, open_collection(settings), golden_sources)
-
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(json.dumps(report, indent=2, ensure_ascii=False))
-    sys.exit(0 if report["passed"] else 1)
-
-
-if __name__ == "__main__":
-    main()

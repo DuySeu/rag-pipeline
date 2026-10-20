@@ -7,9 +7,11 @@ Two pipelines that run on their own and share only the Chroma store on disk (`da
 | Path | What it holds |
 | --- | --- |
 | `data/docs/` | Input documents (`.md`, `.txt`) |
-| `ingestion/` | Load, chunk, embed, write to Chroma (`python -m ingestion`) |
-| `retrieval/` | Embed the question, query Chroma, answer with the chat model (`python -m retrieval`) |
-| `rag_core/` | Settings, OpenRouter client and embedder, Chroma collection access |
+| `ingestion/` | Load, chunk, embed, write to Chroma |
+| `retrieval/` | Embed the question, query Chroma, answer with the chat model |
+| `config.yaml` | Non-secret settings: store path, chunking, `top_k`, `max_distance`, embed prefixes |
+| `core.py` | Settings, OpenRouter client and embedder, Chroma collection access |
+| `main.py` | One entry point: `python main.py {ingest,ask,eval-ingestion,eval-retrieval} [args...]` |
 | `evaluation/datasets/golden.jsonl` | Golden questions with reference answer and source file |
 | `evaluation/ingestion_eval.py` | Checks the store against the docs folder, no API calls |
 | `evaluation/retrieval_eval.py` | hit rate@k, MRR and RAGAS metrics over the golden set |
@@ -18,16 +20,16 @@ Two pipelines that run on their own and share only the Chroma store on disk (`da
 ## Run
 
 ```sh
-cp .env.example .env   # then fill in OPENROUTER_API_KEY
+cp .env.example .env   # then fill in OPENROUTER_API_KEY; other settings live in config.yaml
 uv sync
-uv run --env-file .env python -m ingestion
-uv run --env-file .env python -m retrieval "Mỗi tuần được làm việc từ xa tối đa mấy ngày?"
-uv run --env-file .env python -m evaluation.ingestion_eval
-uv run --env-file .env python -m evaluation.retrieval_eval
+uv run --env-file .env python main.py ingest
+uv run --env-file .env python main.py ask "Mỗi tuần được làm việc từ xa tối đa mấy ngày?"
+uv run --env-file .env python main.py eval-ingestion
+uv run --env-file .env python main.py eval-retrieval
 uv run pytest
 ```
 
-Ingestion rebuilds the whole collection on each run. Re-run it after changing documents, `EMBED_MODEL`, `CHUNK_SIZE` or `CHUNK_OVERLAP`; retrieval must use the same `EMBED_MODEL` that built the store.
+Ingestion rebuilds the whole collection on each run. Re-run it after changing documents, `EMBED_MODEL`, or `chunk_strategy`, `chunk_size`, `chunk_overlap` or `embed_passage_prefix` in `config.yaml`; retrieval must use the same `EMBED_MODEL` that built the store.
 
 ## Golden set format
 

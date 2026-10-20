@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from rag_core.settings import Settings
+from core import Settings
 
 VOCABULARY = ("leave", "remote", "travel")
 
@@ -23,6 +23,7 @@ def settings(tmp_path: Path) -> Settings:
         chat_model="fake",
         chroma_dir=tmp_path / "chroma",
         collection="docs",
+        chunk_strategy="fixed",
         chunk_size=40,
         chunk_overlap=10,
         top_k=2,

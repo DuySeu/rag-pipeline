@@ -11,9 +11,7 @@ import openai
 from chromadb.api.models.Collection import Collection
 from openai import OpenAI
 
-from rag_core.openrouter import Embedder, classify_api_error
-from rag_core.settings import Settings
-from rag_core.store import check_collection
+from core import Embedder, Settings, check_collection, classify_api_error
 
 REFUSAL_ANSWER = "Không tìm thấy thông tin trong tài liệu."
 CLARIFY_MARKER = "CLARIFY:"

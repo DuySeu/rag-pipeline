@@ -5,10 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from core import CliError, ErrorKind, open_collection
 from ingestion.corpus import corpus_hash
 from ingestion.pipeline import build_chunks, ingest
-from rag_core.errors import CliError, ErrorKind
-from rag_core.store import open_collection
 from retrieval.pipeline import (
     REFUSAL_ANSWER,
     RetrievedChunk,

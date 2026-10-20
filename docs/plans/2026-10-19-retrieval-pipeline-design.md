@@ -1,10 +1,10 @@
 # Thiết kế retrieval pipeline
 
-Tài liệu gồm hai phần. Phần đầu mô tả thiết kế hiện tại của `retrieval/` tại commit `a91fcbb`: embed câu hỏi, query Chroma store ở `data/chroma` lấy `TOP_K` chunk gần nhất, rồi gọi chat model qua OpenRouter để trả lời chỉ từ các chunk đó. Phần hai là các thay đổi pipeline đã được người dùng chốt ngày 2026-10-19: kiểm tra `EMBED_MODEL` với metadata của store, ngưỡng cosine distance để từ chối câu hỏi ngoài corpus, trích dẫn nguồn, hỏi lại khi câu hỏi mơ hồ, và ghi latency, token trong kết quả. Thiết kế đánh giá đã tách sang `docs/plans/2026-10-19-evaluation-design.md` và được hoãn tới khi xong hai pipeline. Các thay đổi chưa được implement.
+Tài liệu gồm hai phần. Phần đầu mô tả thiết kế hiện tại của `retrieval/` tại commit `a91fcbb`: embed câu hỏi, query Chroma store ở `data/chroma` lấy `top_k` chunk gần nhất, rồi gọi chat model qua OpenRouter để trả lời chỉ từ các chunk đó. Phần hai là các thay đổi pipeline đã được người dùng chốt ngày 2026-10-19: kiểm tra `EMBED_MODEL` với metadata của store, ngưỡng cosine distance để từ chối câu hỏi ngoài corpus, trích dẫn nguồn, hỏi lại khi câu hỏi mơ hồ, và ghi latency, token trong kết quả. Thiết kế đánh giá đã tách sang `docs/plans/2026-10-19-evaluation-design.md` và được hoãn tới khi xong hai pipeline. Các thay đổi chưa được implement.
 
 ## Bối cảnh và phạm vi
 
-Retrieval chỉ đọc store mà ingestion ghi (`README.md`, `CLAUDE.md`); hai pipeline không gọi nhau, hợp đồng giữa chúng là collection Chroma. Người dùng xác nhận hai pipeline không bao giờ chạy đồng thời. Giao diện hiện có là CLI một câu hỏi: `uv run --env-file .env python -m retrieval "<câu hỏi>"`, in câu trả lời và danh sách source kèm cosine distance (`retrieval/__main__.py:28-31`). Corpus và golden set là tiếng Việt; golden set hiện có 6 câu hỏi, mỗi câu một source (`evaluation/datasets/golden.jsonl`). Giả định lập kế hoạch: corpus thật khoảng 10 văn bản nhiều định dạng (xem `docs/plans/2026-10-19-ingestion-pipeline-design.md`), số chunk (pending).
+Retrieval chỉ đọc store mà ingestion ghi (`README.md`, `CLAUDE.md`); hai pipeline không gọi nhau, hợp đồng giữa chúng là collection Chroma. Người dùng xác nhận hai pipeline không bao giờ chạy đồng thời. Giao diện hiện có là CLI một câu hỏi: `uv run --env-file .env python main.py ask "<câu hỏi>"`, in câu trả lời và danh sách source kèm cosine distance (`main.py:60-64`). Corpus và golden set là tiếng Việt; golden set hiện có 6 câu hỏi, mỗi câu một source (`evaluation/datasets/golden.jsonl`). Giả định lập kế hoạch: corpus thật khoảng 10 văn bản nhiều định dạng (xem `docs/plans/2026-10-19-ingestion-pipeline-design.md`), số chunk (pending).
 
 Ngoài phạm vi: cách tạo store, API server, hội thoại nhiều lượt (kể cả giữ trạng thái giữa câu hỏi lại và câu trả lời), chạy đồng thời với ingestion, thiết kế đánh giá (tài liệu riêng).
 
@@ -29,17 +29,17 @@ Ngoài phạm vi: cách tạo store, API server, hội thoại nhiều lượt (
 
 | Câu hỏi | Trả lời | Nguồn |
 | --- | --- | --- |
-| Retrieve bằng cách nào? | Dense search thuần, một lần query, cosine distance | `retrieval/pipeline.py:32-36`, `rag_core/store.py:8` |
-| Lấy bao nhiêu chunk? | `TOP_K`, mặc định 4; hiện chưa có ngưỡng distance | `rag_core/settings.py:30`, `retrieval/pipeline.py:34` |
+| Retrieve bằng cách nào? | Dense search thuần, một lần query, cosine distance | `retrieval/pipeline.py:32-36`, `core.py:20` |
+| Lấy bao nhiêu chunk? | `top_k`, mặc định 4; hiện chưa có ngưỡng distance | `core.py:117`, `retrieval/pipeline.py:34` |
 | Có lọc metadata trước khi search không? | Không, query trên toàn collection | `retrieval/pipeline.py:32-36` |
-| Model nào trả lời? | `CHAT_MODEL`, mặc định `google/gemma-4-31b-it:free`, `temperature=0` | `rag_core/settings.py:25`, `retrieval/pipeline.py:50-53` |
+| Model nào trả lời? | `CHAT_MODEL` trong `.env` (`.env.example`: `google/gemma-4-31b-it:free`), `temperature=0` | `core.py:111`, `retrieval/pipeline.py:50-53` |
 | Khi context không có câu trả lời? | Hiện tại: prompt yêu cầu model nói không biết, code không tự chặn | `retrieval/pipeline.py:11-15` |
-| Câu trả lời có trích dẫn nguồn không? | Không. `generate_answer` chỉ trả chuỗi text; CLI in source của mọi chunk đã lấy về, không phải nguồn model đã dùng | `retrieval/pipeline.py:46-58`, `retrieval/__main__.py:29-31` |
+| Câu trả lời có trích dẫn nguồn không? | Không. `generate_answer` chỉ trả chuỗi text; CLI in source của mọi chunk đã lấy về, không phải nguồn model đã dùng | `retrieval/pipeline.py:46-58`, `main.py:61-64` |
 | Có cơ chế hỏi lại khi câu hỏi mơ hồ không? | Không | `retrieval/pipeline.py:11-15` |
 | `CHAT_MODEL` mặc định có hỗ trợ JSON output qua OpenRouter không? | `google/gemma-4-31b-it:free` liệt kê `response_format` (JSON mode) và `tools`, nhưng không có `structured_outputs` (JSON schema chặt), theo danh sách model công khai của OpenRouter đọc ngày 2026-10-19 | https://openrouter.ai/api/v1/models |
 | Có yêu cầu latency không? | Không; người dùng xác nhận chưa có ngân sách latency hay quota mỗi câu | - |
-| CLI dùng argparse không? | Có; argparse thoát với code 2 khi sai cú pháp, `SystemExit("...")` hiện tại thoát với code 1 | `retrieval/__main__.py:13-15`, `retrieval/pipeline.py:30`, `rag_core/openrouter.py:18` |
-| OpenAI SDK có tự retry không? | Có. `make_client` dùng mặc định (`rag_core/openrouter.py:19`): `DEFAULT_MAX_RETRIES = 2`, backoff 0.5 tới 8 giây, retry 408, 409, 429, 5xx, theo `Retry-After` nếu không quá 120 giây, không retry nếu `Retry-After` dài hơn hoặc `x-should-retry: false` (openai 3.3.0) | `.venv/lib/python3.12/site-packages/openai/_constants.py:8-13`, `.venv/lib/python3.12/site-packages/openai/_base_client.py:826-866` |
+| CLI dùng argparse không? | Có; argparse thoát với code 2 khi sai cú pháp, `SystemExit("...")` hiện tại thoát với code 1 | `main.py:105-107`, `retrieval/pipeline.py:30`, `core.py:133-136` |
+| OpenAI SDK có tự retry không? | Có. `make_client` dùng mặc định (`core.py:137`): `DEFAULT_MAX_RETRIES = 2`, backoff 0.5 tới 8 giây, retry 408, 409, 429, 5xx, theo `Retry-After` nếu không quá 120 giây, không retry nếu `Retry-After` dài hơn hoặc `x-should-retry: false` (openai 3.3.0) | `.venv/lib/python3.12/site-packages/openai/_constants.py:8-13`, `.venv/lib/python3.12/site-packages/openai/_base_client.py:826-866` |
 | `EMBED_MODEL` có cần prefix không? | Có theo model card: `query: ` cho câu hỏi, `passage: ` cho tài liệu, kể cả khi gọi qua endpoint `/v1/embeddings` kiểu OpenAI | https://huggingface.co/nvidia/Nemotron-3-Embed-1B-BF16 (README dòng 152 và 502, đọc 2026-10-19) |
 | Chroma có giới hạn `n_results` theo số phần tử không? | Có, log warning và giảm `n_results` về số phần tử trong index | `.venv/lib/python3.12/site-packages/chromadb/segment/impl/vector/local_persistent_hnsw.py:419-424` |
 
@@ -64,7 +64,7 @@ sequenceDiagram
     E-->>R: query vector
     R->>C: query(n_results=top_k)
     C-->>R: documents, metadatas, distances
-    R->>R: mới: bỏ chunk có distance > MAX_DISTANCE
+    R->>R: mới: bỏ chunk có distance > max_distance
     R-->>U: list RetrievedChunk
     alt không còn chunk nào
         U-->>U: trả câu cố định, không gọi chat model
@@ -81,12 +81,12 @@ sequenceDiagram
 
 | Thành phần | Trách nhiệm | Phụ thuộc | Vị trí |
 | --- | --- | --- | --- |
-| `main` | Nhận câu hỏi từ argv, load settings, gọi `retrieve` rồi `generate_answer`, in answer và sources | settings, openrouter, store, pipeline | `retrieval/__main__.py:12-31` |
+| `main` | Nhận câu hỏi từ argv, load settings, gọi `retrieve` rồi `generate_answer`, in answer và sources | settings, openrouter, store, pipeline | `main.py:45-65` |
 | `retrieve` | Dừng nếu collection rỗng, embed câu hỏi, query `top_k`, trả `RetrievedChunk` | `Collection`, `Embedder` | `retrieval/pipeline.py:26-42` |
 | `RetrievedChunk` | Dataclass frozen gồm `source`, `text`, `distance` | không | `retrieval/pipeline.py:18-22` |
 | `generate_answer` | Ghép context dạng `[source]\ntext`, gọi chat completion, trả `""` nếu content rỗng | client OpenAI trỏ tới OpenRouter | `retrieval/pipeline.py:46-58` |
-| `open_collection` | Mở collection đã lưu, `get_or_create`, không gắn embedding function | chromadb | `rag_core/store.py:12-16` |
-| `make_embedder` | Dùng chung với ingestion, nên query và passage cùng đi qua một hàm embed | OpenRouter | `rag_core/openrouter.py:30-39` |
+| `open_collection` | Mở collection đã lưu, `get_or_create`, không gắn embedding function | chromadb | `core.py:205-209` |
+| `make_embedder` | Dùng chung với ingestion, nên query và passage cùng đi qua một hàm embed | OpenRouter | `core.py:189-201` |
 
 `retrieve` và `generate_answer` nhận collection, embedder và client qua tham số, nên `retrieval_eval` dùng lại nguyên hai hàm này (`evaluation/retrieval_eval.py:82-83`) và test thay embedder bằng `fake_embed` (`tests/test_retrieval_pipeline.py:11-17`). Tách hai hàm cũng là điều kiện để eval sau này chạy riêng lớp generation với gold evidence (`docs/plans/2026-10-19-evaluation-design.md`, mục "Hai lớp đánh giá").
 
@@ -95,9 +95,9 @@ sequenceDiagram
 | Điều kiện | Ai đảm bảo | Hậu quả nếu vi phạm |
 | --- | --- | --- |
 | Không chạy đồng thời với ingestion | người vận hành, theo quy tắc đã chốt | không xác định: store rỗng, thiếu chunk, hoặc ingestion fail; không được xử lý |
-| Cùng `CHROMA_DIR` và `COLLECTION` | cả hai đọc từ `rag_core/settings.py:26-27` | đọc nhầm hoặc tạo collection rỗng mới |
+| Cùng `chroma_dir` và `collection` | cả hai đọc từ `core.py:112-113` | đọc nhầm hoặc tạo collection rỗng mới |
 | Cùng `EMBED_MODEL` và cùng cặp prefix đã build store | ingestion ghi `embed_model`, `embed_query_prefix`, `embed_passage_prefix` vào metadata collection, retrieval kiểm tra | `[ERROR CONFIG]`, exit code 5 |
-| Collection dùng cosine | `COLLECTION_CONFIG` dùng chung (`rag_core/store.py:8`) | distance không còn là cosine distance, ngưỡng mất ý nghĩa |
+| Collection dùng cosine | `COLLECTION_CONFIG` dùng chung (`core.py:20`) | distance không còn là cosine distance, ngưỡng mất ý nghĩa |
 | Metadata chunk có `source` và locator (`page`/`sheet`/`slide`) | ingestion ghi | `retrieve` raise `KeyError` (`retrieval/pipeline.py:38`); không khớp được gold evidence, không trích dẫn được trang |
 | `source` là path tương đối so với `data/docs` | ingestion và golden set dùng cùng quy ước (`doc_id`) | Recall@k luôn 0 |
 | Store có `corpus_hash` và cấu hình chunk trong metadata collection | ingestion ghi | report eval không ghi được phiên bản corpus, không so sánh được hai lần chạy |
@@ -106,27 +106,27 @@ sequenceDiagram
 
 ## Kiểm tra embed model khi mở store
 
-Trước khi embed câu hỏi, `retrieve` (hoặc một hàm nhỏ trong `rag_core/store.py` mà cả retrieval và `retrieval_eval` gọi) đọc `collection.metadata` và so `embed_model` với `settings.embed_model`:
+Trước khi embed câu hỏi, `retrieve` (hoặc một hàm nhỏ trong `core.py` mà cả retrieval và `retrieval_eval` gọi) đọc `collection.metadata` và so `embed_model` với `settings.embed_model`:
 
 | Trường hợp | Hành vi |
 | --- | --- |
 | Khớp | tiếp tục |
 | Khác | `[ERROR CONFIG]`, exit code 5, thông báo nêu cả model của store và model hiện tại, yêu cầu chạy lại ingestion hoặc đổi `EMBED_MODEL` |
-| `embed_query_prefix` của store khác `EMBED_QUERY_PREFIX` | `[ERROR CONFIG]`, exit code 5 |
+| `embed_query_prefix` của store khác `embed_query_prefix` trong `config.yaml` | `[ERROR CONFIG]`, exit code 5 |
 | Store không có `embed_model` (build trước thay đổi) | `[ERROR CONFIG]`, exit code 5, yêu cầu chạy lại ingestion |
 
-Kiểm tra chạy trước lời gọi embed, nên khi lệch model không tốn quota. Retrieval chỉ kiểm tra `embed_model`; lệch `chunk_size`, `chunk_overlap`, `chunk_strategy` không làm sai kết quả query nên do `ingestion_eval` báo. `retrieve` cần thêm tham số tên model (hoặc nhận `Settings`); đây là thay đổi chữ ký hàm, ảnh hưởng `retrieval/__main__.py:20-25`, `evaluation/retrieval_eval.py:82` và test.
+Kiểm tra chạy trước lời gọi embed, nên khi lệch model không tốn quota. Retrieval chỉ kiểm tra `embed_model`; lệch `chunk_size`, `chunk_overlap`, `chunk_strategy` không làm sai kết quả query nên do `ingestion_eval` báo. `retrieve` cần thêm tham số tên model (hoặc nhận `Settings`); đây là thay đổi chữ ký hàm, ảnh hưởng `main.py:51-54`, `evaluation/retrieval_eval.py:82` và test.
 
 ## Ngưỡng distance cho câu hỏi ngoài corpus
 
 Giá trị ngưỡng là (pending).
 
-- Thêm setting `MAX_DISTANCE` đọc từ env qua `rag_core/settings.py`. Không đặt thì không lọc, giữ nguyên hành vi hiện tại; nhờ vậy lần đổi code này không đổi metric, và việc bật ngưỡng là một biến riêng.
-- `retrieve` vẫn query `TOP_K` chunk rồi bỏ mọi chunk có cosine distance lớn hơn `MAX_DISTANCE`. Số chunk trả về có thể từ 0 tới `TOP_K`.
+- Thêm setting `max_distance` trong `config.yaml`, đọc qua `core.py`. Để `null` thì không lọc, giữ nguyên hành vi hiện tại; nhờ vậy lần đổi code này không đổi metric, và việc bật ngưỡng là một biến riêng.
+- `retrieve` vẫn query `top_k` chunk rồi bỏ mọi chunk có cosine distance lớn hơn `max_distance`. Số chunk trả về có thể từ 0 tới `top_k`.
 - Không còn chunk nào: trả câu cố định "Không tìm thấy thông tin trong tài liệu." và không gọi chat model. CLI in câu đó và không in mục Sources. Câu cố định là một hằng số `REFUSAL_ANSWER` trong `retrieval/pipeline.py`.
 - Còn ít nhất một chunk: đi tiếp như hiện tại; prompt "say you don't know" vẫn giữ làm lớp thứ hai.
 
-Giá trị được chọn bằng `retrieval_eval` theo quy trình ở `docs/plans/2026-10-19-evaluation-design.md`, mục "Chọn ngưỡng `MAX_DISTANCE`". Quy tắc "retrieval changes are eval-driven" của `CLAUDE.md` vẫn áp dụng trong lúc eval bị hoãn, nên giá trị ngưỡng, việc đổi `TOP_K` và các tham số retrieval khác giữ (pending) tới khi eval chạy được; tới lúc đó `MAX_DISTANCE` để trống (không lọc).
+Giá trị được chọn bằng `retrieval_eval` theo quy trình ở `docs/plans/2026-10-19-evaluation-design.md`, mục "Chọn ngưỡng `max_distance`". Quy tắc "retrieval changes are eval-driven" của `CLAUDE.md` vẫn áp dụng trong lúc eval bị hoãn, nên giá trị ngưỡng, việc đổi `top_k` và các tham số retrieval khác giữ (pending) tới khi eval chạy được; tới lúc đó `max_distance` để `null` (không lọc).
 
 ## Trích dẫn nguồn trong câu trả lời
 
@@ -145,7 +145,7 @@ Phương án "trả source của mọi chunk đã đưa vào context" bị loạ
 Người dùng chốt xây cơ chế clarify. Thiết kế đề xuất:
 
 - Giữ single-shot, không lưu trạng thái hội thoại. Câu hỏi lại là một kết quả cuối của lần chạy; người dùng tự hỏi lại bằng câu cụ thể hơn, lần chạy sau không biết lần trước.
-- Từ chối vẫn do `MAX_DISTANCE` quyết định trước mọi lời gọi LLM. Clarify chỉ xảy ra khi có ít nhất một chunk qua ngưỡng.
+- Từ chối vẫn do `max_distance` quyết định trước mọi lời gọi LLM. Clarify chỉ xảy ra khi có ít nhất một chunk qua ngưỡng.
 - Chat model trả JSON: `{"type": "answer" | "clarify", "text": "...", "citations": [1, 3]}`. Với `clarify`, `text` là một câu hỏi lại ngắn và `citations` là các chunk cho thấy câu hỏi có nhiều cách hiểu.
 - Prompt (vẫn tiếng Anh) mô tả khi nào hỏi lại: câu hỏi khớp nhiều thực thể hoặc tài liệu khác nhau trong context (vd hai quy định cùng tên ở hai tài liệu) và mỗi cách hiểu cho câu trả lời khác nhau, đến mức gộp lại thành một câu trả lời sẽ gây hiểu nhầm. Khi các trường hợp ít và trả lời gộp được, phải trả lời cả các trường hợp thay vì hỏi lại. Ví dụ ranh giới trong corpus hiện tại: "Phụ cấp ăn uống khi đi công tác là bao nhiêu?" khớp hai mức trong `data/docs/cong-tac-phi.md` (trong nước và nước ngoài); trả lời cả hai mức là đúng, không hỏi lại. Câu hỏi lại viết theo ngôn ngữ của câu hỏi, như câu trả lời (`retrieval/pipeline.py:14`).
 - Gọi chat với `response_format={"type": "json_object"}`. Model mặc định hỗ trợ tham số này nhưng không hỗ trợ JSON schema chặt (https://openrouter.ai/api/v1/models), nên JSON có thể sai cấu trúc và phải được kiểm tra. Provider free tier có thực sự áp dụng JSON mode hay không là unverified.
@@ -178,9 +178,9 @@ Người dùng chốt: dòng đầu tiên của output cho biết ngay pipeline 
 | Hết quota ngày | `[ERROR QUOTA]` | đã dùng hết giới hạn request free tier trong ngày UTC (hoặc 402 hết credit); chạy lại sau khi reset | stderr | 7 |
 | Lỗi API khác | `[ERROR API]` | 5xx, 502, 503 hoặc lỗi mạng sau khi SDK đã retry, kèm HTTP status và `error.message` | stderr | 8 |
 
-Code 1 để dành cho lỗi không lường trước (exception Python không bắt), code 2 để dành cho argparse khi sai cú pháp (`retrieval/__main__.py:13-15`), nên không dùng hai code này cho kết quả có chủ đích. Nhãn viết ASCII cố định để `grep` được; phần nội dung giữ ngôn ngữ như hiện tại. Bảng exit code đặt trong `rag_core` để ingestion dùng chung các code lỗi 5 tới 8.
+Code 1 để dành cho lỗi không lường trước (exception Python không bắt), code 2 để dành cho argparse khi sai cú pháp (`main.py:105-107`), nên không dùng hai code này cho kết quả có chủ đích. Nhãn viết ASCII cố định để `grep` được; phần nội dung giữ ngôn ngữ như hiện tại. Bảng exit code đặt trong `core.py` để ingestion dùng chung các code lỗi 5 tới 8.
 
-Thay đổi đi kèm: các chỗ đang `raise SystemExit("...")` (`retrieval/pipeline.py:30`, `rag_core/openrouter.py:18`, `rag_core/openrouter.py:25`) đổi sang exception có loại, và chỉ `main` mới in nhãn và gọi `sys.exit` với code tương ứng. Nhờ vậy `retrieve` và `generate_answer` vẫn dùng được từ `retrieval_eval` mà không thoát process.
+Thay đổi đi kèm: các chỗ đang `raise SystemExit("...")` (`retrieval/pipeline.py:30`, `core.py:133-136`, `core.py:143-146`) đổi sang exception có loại, và chỉ `main` mới in nhãn và gọi `sys.exit` với code tương ứng. Nhờ vậy `retrieve` và `generate_answer` vẫn dùng được từ `retrieval_eval` mà không thoát process.
 
 ## Rate limit và hết quota
 
@@ -196,11 +196,11 @@ Tài liệu lỗi (https://openrouter.ai/docs/api-reference/errors, đọc 2026-
 
 Thiết kế:
 
-- Retry ngắn: giữ retry của OpenAI SDK, ghi tường minh `max_retries=2` trong `make_client` và `make_async_client` (`rag_core/openrouter.py:19`, `rag_core/openrouter.py:26`) để giới hạn retry hiện rõ trong code. SDK retry 429 tối đa 2 lần với backoff 0.5 tới 8 giây và theo `Retry-After` tới 120 giây (`.venv/lib/python3.12/site-packages/openai/_constants.py:8-13`, `.venv/lib/python3.12/site-packages/openai/_base_client.py:826-866`). Không thêm vòng retry nào khác.
+- Retry ngắn: giữ retry của OpenAI SDK, ghi tường minh `max_retries=2` trong `make_client` và `make_async_client` (`core.py:137`, `core.py:147-149`) để giới hạn retry hiện rõ trong code. SDK retry 429 tối đa 2 lần với backoff 0.5 tới 8 giây và theo `Retry-After` tới 120 giây (`.venv/lib/python3.12/site-packages/openai/_constants.py:8-13`, `.venv/lib/python3.12/site-packages/openai/_base_client.py:826-866`). Không thêm vòng retry nào khác.
 - Phân loại sau khi SDK đã hết retry và raise `openai.RateLimitError`: gọi `GET /api/v1/key` một lần. `free_model_daily_requests.remaining` bằng 0 thì là hết quota ngày (`[ERROR QUOTA]`, code 7). Còn lớn hơn 0 thì là rate limit ngắn (`[ERROR RATE_LIMIT]`, code 6). Lời gọi kiểm tra cũng lỗi thì báo `[ERROR RATE_LIMIT]` với nội dung nói rõ không xác định được là giới hạn phút hay giới hạn ngày.
 - HTTP 402 (`openai.APIStatusError` với status 402) là `[ERROR QUOTA]`, code 7. 401 là `[ERROR CONFIG]`, code 5.
 - Thông báo lỗi gồm HTTP status, `error.message`, `error.metadata.provider_code` nếu có, `X-RateLimit-Reset` nếu có, và `used`/`limit` từ `/api/v1/key` nếu đọc được. Không in API key.
-- Hàm phân loại đặt trong `rag_core/openrouter.py`, dùng chung cho ingestion, retrieval và eval.
+- Hàm phân loại đặt trong `core.py`, dùng chung cho ingestion, retrieval và eval.
 
 Chi phí: khi hết quota ngày, SDK vẫn gửi thêm tối đa 2 request bị từ chối trước khi dừng; những request đó có bị tính vào giới hạn hay không là unverified. Đổi lại không phải tự viết logic retry.
 
@@ -212,11 +212,11 @@ Trong retrieval, lỗi này có thể xảy ra ở lời gọi embed câu hỏi 
 
 | Phương án | Ưu | Nhược |
 | --- | --- | --- |
-| `TOP_K` cố định, không ngưỡng (hiện tại) | đơn giản, một biến để ablation | luôn đưa chunk vào context kể cả khi không liên quan |
-| `TOP_K` cộng ngưỡng distance (đã chốt) | từ chối câu ngoài corpus mà không tốn lời gọi chat | ngưỡng phụ thuộc embed model, cần câu `refuse` trong golden set để chọn |
-| `TOP_K` động theo độ dài context | tận dụng context window | khó so sánh giữa các lần eval |
+| `top_k` cố định, không ngưỡng (hiện tại) | đơn giản, một biến để ablation | luôn đưa chunk vào context kể cả khi không liên quan |
+| `top_k` cộng ngưỡng distance (đã chốt) | từ chối câu ngoài corpus mà không tốn lời gọi chat | ngưỡng phụ thuộc embed model, cần câu `refuse` trong golden set để chọn |
+| `top_k` động theo độ dài context | tận dụng context window | khó so sánh giữa các lần eval |
 
-Corpus hiện chỉ có 3 chunk (`evaluation/reports/ingestion.json`: `"expected_chunks": 3`) trong khi `TOP_K=4`, nên mọi câu hỏi nhận toàn bộ corpus làm context và Chroma log warning (`.venv/lib/python3.12/site-packages/chromadb/segment/impl/vector/local_persistent_hnsw.py:419-424`). Với corpus thật khoảng 10 văn bản, `TOP_K=4` chỉ có ý nghĩa khi số chunk (pending) lớn hơn 4; giữ `TOP_K=4` cho tới khi có baseline trên corpus thật, mọi thay đổi `TOP_K` qua `retrieval_eval`.
+Corpus hiện chỉ có 3 chunk (`evaluation/reports/ingestion.json`: `"expected_chunks": 3`) trong khi `top_k: 4`, nên mọi câu hỏi nhận toàn bộ corpus làm context và Chroma log warning (`.venv/lib/python3.12/site-packages/chromadb/segment/impl/vector/local_persistent_hnsw.py:419-424`). Với corpus thật khoảng 10 văn bản, `top_k: 4` chỉ có ý nghĩa khi số chunk (pending) lớn hơn 4; giữ `top_k: 4` cho tới khi có baseline trên corpus thật, mọi thay đổi `top_k` qua `retrieval_eval`.
 
 ### Một lần retrieve thay vì agentic
 
@@ -228,9 +228,9 @@ System prompt yêu cầu chỉ dùng context, nói không biết nếu thiếu, 
 
 ### Embed câu hỏi với prefix
 
-Hiện câu hỏi đi qua cùng `make_embedder` với passage, không có prefix (`retrieval/pipeline.py:33`, `rag_core/openrouter.py:30-39`). Model card của Nemotron 3 Embed 1B yêu cầu thêm `query: ` trước câu hỏi và `passage: ` trước tài liệu, và nói rõ khi gọi qua endpoint `/v1/embeddings` kiểu OpenAI thì phải tự thêm prefix vào `input` (https://huggingface.co/nvidia/Nemotron-3-Embed-1B-BF16, README dòng 152 và 502, đọc 2026-10-19). Danh sách model của OpenRouter không có tham số nào cho embedding model này (`supported_parameters: []`), nên không có cách khác ngoài tự thêm prefix (https://openrouter.ai/api/v1/embeddings/models, đọc 2026-10-19).
+Hiện câu hỏi đi qua cùng `make_embedder` với passage, không có prefix (`retrieval/pipeline.py:33`, `core.py:189-201`). Model card của Nemotron 3 Embed 1B yêu cầu thêm `query: ` trước câu hỏi và `passage: ` trước tài liệu, và nói rõ khi gọi qua endpoint `/v1/embeddings` kiểu OpenAI thì phải tự thêm prefix vào `input` (https://huggingface.co/nvidia/Nemotron-3-Embed-1B-BF16, README dòng 152 và 502, đọc 2026-10-19). Danh sách model của OpenRouter không có tham số nào cho embedding model này (`supported_parameters: []`), nên không có cách khác ngoài tự thêm prefix (https://openrouter.ai/api/v1/embeddings/models, đọc 2026-10-19).
 
-Thiết kế: thêm setting `EMBED_QUERY_PREFIX` (mặc định `query: `, có dấu cách cuối) và `EMBED_PASSAGE_PREFIX` (mặc định `passage: `) qua `rag_core/settings.py`. Retrieval embed `EMBED_QUERY_PREFIX + question`; ingestion embed `EMBED_PASSAGE_PREFIX + text` nhưng lưu text không có prefix. Ingestion ghi cả hai prefix vào metadata collection; retrieval so `embed_query_prefix` của store với setting hiện tại cùng lúc kiểm tra `embed_model`, lệch thì `[ERROR CONFIG]`, code 5. Đổi `EMBED_MODEL` sang model khác thì phải đặt lại hai prefix theo model card của model đó.
+Thiết kế: thêm setting `embed_query_prefix` (mặc định `query: `, có dấu cách cuối) và `embed_passage_prefix` (mặc định `passage: `) trong `config.yaml`, đọc qua `core.py`. Retrieval embed `embed_query_prefix + question`; ingestion embed `embed_passage_prefix + text` nhưng lưu text không có prefix. Ingestion ghi cả hai prefix vào metadata collection; retrieval so `embed_query_prefix` của store với setting hiện tại cùng lúc kiểm tra `embed_model`, lệch thì `[ERROR CONFIG]`, code 5. Đổi `EMBED_MODEL` sang model khác thì phải đặt lại hai prefix theo model card của model đó.
 
 Hai điều chưa chắc: OpenRouter để `hugging_face_id` là `null` cho `nvidia/nemotron-3-embed-1b:free`, nên việc model OpenRouter phục vụ đúng là checkpoint trên Hugging Face là suy ra từ tên (unverified); OpenRouter có tự thêm prefix phía server hay không cũng không được nêu (unverified). Thêm prefix là thay đổi cách retrieve, nên theo `CLAUDE.md` cần `retrieval_eval` trước và sau; eval đang hoãn và store chưa từng được build (`evaluation/reports/ingestion.json`: `"stored_chunks": 0`), nên đề xuất làm theo model card ngay từ lần build đầu và để eval xác nhận sau.
 
@@ -238,12 +238,12 @@ Hai điều chưa chắc: OpenRouter để `hugging_face_id` là `null` cho `nvi
 
 | Tình huống | Hành vi | Nguồn |
 | --- | --- | --- |
-| Thiếu `OPENROUTER_API_KEY` | hiện tại: `SystemExit` code 1 trước khi mở store. Sau thay đổi: `[ERROR CONFIG]`, code 5 | `rag_core/openrouter.py:17-18`, `retrieval/__main__.py:18` |
-| Store chưa build hoặc rỗng | hiện tại: `SystemExit` code 1 với thông báo "Vector store is empty; run \`python -m ingestion\` first"; `open_collection` dùng `get_or_create` nên vẫn tạo một collection rỗng trên đĩa. Sau thay đổi: `[ERROR CONFIG]`, code 5 | `retrieval/pipeline.py:29-30`, `rag_core/store.py:14`, `tests/test_retrieval_pipeline.py:20-22` |
-| Ingestion đang chạy | không xử lý theo thiết kế; điều kiện tiên quyết là không chạy đồng thời | `rag_core/store.py:14`, `rag_core/store.py:22-26` |
+| Thiếu `OPENROUTER_API_KEY` | hiện tại: `SystemExit` code 1 trước khi mở store. Sau thay đổi: `[ERROR CONFIG]`, code 5 | `core.py:132-136`, `main.py:52` |
+| Store chưa build hoặc rỗng | hiện tại: `SystemExit` code 1 với thông báo "Vector store is empty; run \`python main.py ingest\` first"; `open_collection` dùng `get_or_create` nên vẫn tạo một collection rỗng trên đĩa. Sau thay đổi: `[ERROR CONFIG]`, code 5 | `retrieval/pipeline.py:29-30`, `core.py:207`, `tests/test_retrieval_pipeline.py:20-22` |
+| Ingestion đang chạy | không xử lý theo thiết kế; điều kiện tiên quyết là không chạy đồng thời | `core.py:207`, `core.py:238-245` |
 | Lệch `EMBED_MODEL` với store | sau thay đổi: `[ERROR CONFIG]`, code 5, nêu cả hai model, trước khi gọi API | `retrieval/pipeline.py:32-36` |
 | Store build trước thay đổi, không có metadata | sau thay đổi: `[ERROR CONFIG]`, code 5, yêu cầu chạy lại ingestion | metadata collection |
-| `TOP_K` lớn hơn số chunk | Chroma log warning và trả về toàn bộ chunk hiện có | `.venv/lib/python3.12/site-packages/chromadb/segment/impl/vector/local_persistent_hnsw.py:419-424` |
+| `top_k` lớn hơn số chunk | Chroma log warning và trả về toàn bộ chunk hiện có | `.venv/lib/python3.12/site-packages/chromadb/segment/impl/vector/local_persistent_hnsw.py:419-424` |
 | Câu hỏi ngoài corpus | sau thay đổi: không chunk nào qua ngưỡng thì trả câu cố định | mục "Ngưỡng distance" |
 | Ngưỡng quá chặt hoặc quá lỏng | từ chối nhầm hoặc để lọt; eval sau này đo bằng `false_refusal_rate` và `refusal_accuracy` | evaluation doc |
 | Đổi `EMBED_MODEL` mà giữ ngưỡng cũ | thang distance khác, ngưỡng sai mà không báo lỗi | phải chọn lại ngưỡng |
@@ -280,15 +280,15 @@ Retrieval pipeline phải sinh ra các dữ liệu sau để eval xây được 
 
 | File | Thay đổi |
 | --- | --- |
-| `rag_core/settings.py:8-31` | thêm `max_distance` (`MAX_DISTANCE`, mặc định không lọc), `embed_query_prefix`, `embed_passage_prefix` |
-| `rag_core/openrouter.py:16-39` | `max_retries=2` tường minh; nhận prefix khi embed; hàm phân loại lỗi API (rate limit, quota, config, API) có gọi `GET /api/v1/key`; exception có loại thay cho `SystemExit` |
-| `rag_core` (mới, vd `rag_core/exit_codes.py`) | bảng exit code và nhãn dùng chung |
-| `rag_core/store.py` | hàm đọc và kiểm tra `embed_model` trong metadata collection |
+| `core.py:55-127` | thêm `max_distance` (mặc định `null`, không lọc), `embed_query_prefix`, `embed_passage_prefix` |
+| `core.py:131-201` | `max_retries=2` tường minh; nhận prefix khi embed; hàm phân loại lỗi API (rate limit, quota, config, API) có gọi `GET /api/v1/key`; exception có loại thay cho `SystemExit` |
+| `core.py` (`ErrorKind`, `CliError`) | bảng exit code và nhãn dùng chung |
+| `core.py` | hàm đọc và kiểm tra `embed_model` trong metadata collection |
 | `retrieval/pipeline.py:11-15` | prompt thêm trích dẫn `[n]`, output JSON, quy tắc hỏi lại, marker `CLARIFY:`; thêm `REFUSAL_ANSWER` |
 | `retrieval/pipeline.py:18-22` | `RetrievedChunk` thêm `locator`; thêm dataclass frozen `Answer` |
-| `retrieval/pipeline.py:26-42` | kiểm tra `embed_model`, đọc locator từ metadata, lọc theo `MAX_DISTANCE`, giữ danh sách trước khi lọc |
+| `retrieval/pipeline.py:26-42` | kiểm tra `embed_model`, đọc locator từ metadata, lọc theo `max_distance`, giữ danh sách trước khi lọc |
 | `retrieval/pipeline.py:46-58` | context đánh số, `response_format` JSON, parse và fallback, map citations, trả `Answer` kèm `usage` và `latency_ms` |
-| `retrieval/__main__.py:12-35` | in nhãn dòng đầu, Sources theo `citations`, bắt exception có loại và thoát với exit code theo bảng |
+| `main.py:45-65` | in nhãn dòng đầu, Sources theo `citations`, bắt exception có loại và thoát với exit code theo bảng |
 | `evaluation/retrieval_eval.py:82-84` | sửa tối thiểu để đọc `Answer.text` thay cho chuỗi, giữ eval hiện có chạy được |
 
 ## Test cần thêm
@@ -296,14 +296,14 @@ Retrieval pipeline phải sinh ra các dữ liệu sau để eval xây được 
 Mọi test không gọi mạng; chat model được thay bằng hàm giả trả output cố định, giống cách `fake_embed` thay embedder.
 
 - Lệch `embed_model` hoặc thiếu metadata thì lỗi config trước khi gọi embedder.
-- `MAX_DISTANCE` không đặt thì trả đủ `top_k` chunk như cũ; mọi chunk vượt ngưỡng thì `kind = refuse`, `text = REFUSAL_ANSWER` và chat model không được gọi.
+- `max_distance` là `null` thì trả đủ `top_k` chunk như cũ; mọi chunk vượt ngưỡng thì `kind = refuse`, `text = REFUSAL_ANSWER` và chat model không được gọi.
 - JSON `type = answer` với `citations: [1, 3]` map đúng `(doc_id, locator)`; số 9 khi chỉ có 4 chunk bị bỏ và đếm vào `invalid_citations`.
 - JSON `type = clarify` cho `kind = clarify`, CLI in câu hỏi lại và không in Sources.
 - Output không phải JSON: bắt đầu bằng `CLARIFY:` thì là clarify; text thường thì là `answer` và citations lấy bằng regex `[n]`; `type` lạ thì là `answer`.
 - `usage` thiếu trong response thì `Answer.usage` là `None`, không lỗi.
 - CLI in đúng nhãn dòng đầu và thoát đúng code cho từng loại: 0, 3, 4, 5, 6, 7, 8.
 - Phân loại lỗi: 429 khi `/api/v1/key` trả `remaining = 0` là quota (7); `remaining > 0` là rate limit (6); `/api/v1/key` cũng lỗi thì là rate limit với thông báo không xác định; 402 là quota; 401 là config; thông báo lỗi không chứa API key. Dùng response giả, không gọi mạng.
-- Câu hỏi được embed với `EMBED_QUERY_PREFIX`; store có `embed_query_prefix` khác setting thì lỗi config trước khi embed.
+- Câu hỏi được embed với `embed_query_prefix`; store có `embed_query_prefix` khác setting thì lỗi config trước khi embed.
 
 ## Nâng cấp có điều kiện
 
@@ -316,11 +316,11 @@ Không mục nào dưới đây là mặc định (`CLAUDE.md`). Mỗi mục ch�
 | Lọc metadata trước khi search | corpus có nhiều nhóm tài liệu và câu hỏi chỉ thuộc một nhóm | ingestion phải ghi thêm metadata, câu hỏi phải mang thông tin lọc |
 | Query rewriting hoặc decomposition | `recall@k` hoặc `all_evidence_hit@k` ở nhóm `multi-hop`, `comparison` thấp hơn rõ nhóm `factoid` | thêm một hoặc nhiều lời gọi chat mỗi câu hỏi, tốn quota free tier |
 | `gather()` trong `retrieval_eval` (`# ponytail` ở `evaluation/retrieval_eval.py:79`) | chuyển sang gói OpenRouter trả phí | dễ chạm rate limit nếu vẫn ở free tier |
-| Đổi vector store | Chroma trên đĩa không đáp ứng kích thước corpus | migration, dependency mới, viết lại `rag_core/store.py` |
+| Đổi vector store | Chroma trên đĩa không đáp ứng kích thước corpus | migration, dependency mới, viết lại `core.py` |
 
 ## Câu hỏi đã trả lời
 
-- Corpus dự kiến: khoảng 10 văn bản, số chunk (pending); giữ `TOP_K=4` tới khi có baseline trên corpus thật.
+- Corpus dự kiến: khoảng 10 văn bản, số chunk (pending); giữ `top_k: 4` tới khi có baseline trên corpus thật.
 - Chạy đồng thời với ingestion: không.
 - Phát hiện lệch embed model: có, qua `embed_model` trong metadata collection, retrieval dừng sớm.
 - Câu hỏi ngoài corpus: ngưỡng cosine distance, không qua ngưỡng thì trả câu cố định; giá trị ngưỡng (pending).

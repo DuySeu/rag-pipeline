@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import httpx
 import openai
 import pytest
 
-from ingestion.__main__ import main
+import core
+from core import CliError, ErrorKind, make_embedder, open_collection
 from ingestion.corpus import corpus_hash
 from ingestion.pipeline import build_chunks, ingest
-from rag_core import openrouter
-from rag_core.errors import CliError, ErrorKind
-from rag_core.openrouter import make_embedder
-from rag_core.store import open_collection
+from main import main
 from tests.conftest import fake_embed
 
 
@@ -35,7 +34,7 @@ def failing_client(status: int) -> SimpleNamespace:
 
 def key_info(monkeypatch, daily):
     response = httpx.Response(200, json={"data": {"free_model_daily_requests": daily}})
-    monkeypatch.setattr(openrouter.httpx, "get", lambda *a, **k: response)
+    monkeypatch.setattr(core.httpx, "get", lambda *a, **k: response)
 
 
 def test_embedder_prepends_prefix_to_every_text():
@@ -78,7 +77,7 @@ def test_embedder_reports_rate_limit_when_quota_lookup_fails(monkeypatch):
     def broken(*a, **k):
         raise httpx.ConnectError("down")
 
-    monkeypatch.setattr(openrouter.httpx, "get", broken)
+    monkeypatch.setattr(core.httpx, "get", broken)
 
     with pytest.raises(CliError) as caught:
         make_embedder(failing_client(429), "m")(["a"])
@@ -92,10 +91,9 @@ def test_ingestion_exits_with_quota_code_and_keeps_old_index(
     ingest(build_chunks(docs_dir, 40, 10), settings, fake_embed, corpus_hash(docs_dir))
     before = open_collection(settings).get()["ids"]
     key_info(monkeypatch, {"used": 50, "limit": 50, "remaining": 0})
-    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
-    monkeypatch.setenv("CHROMA_DIR", str(settings.chroma_dir))
-    monkeypatch.setattr("sys.argv", ["ingestion", "--docs", str(docs_dir)])
-    monkeypatch.setattr("ingestion.__main__.make_client", lambda s: failing_client(429))
+    monkeypatch.setattr("main.load_settings", lambda: replace(settings, api_key="k"))
+    monkeypatch.setattr("sys.argv", ["main.py", "ingest", "--docs", str(docs_dir)])
+    monkeypatch.setattr("main.make_client", lambda s: failing_client(429))
 
     with pytest.raises(SystemExit) as exit_info:
         main()

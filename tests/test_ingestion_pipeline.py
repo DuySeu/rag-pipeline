@@ -4,11 +4,12 @@ from dataclasses import replace
 
 import pytest
 
+from core import open_collection
 from evaluation.ingestion_eval import evaluate_ingestion
+from ingestion.chunking import chunk_text
 from ingestion.corpus import corpus_hash
 from ingestion.loaders import Section
-from ingestion.pipeline import build_chunks, chunk_documents, chunk_text, ingest
-from rag_core.store import open_collection
+from ingestion.pipeline import build_chunks, chunk_documents, ingest
 from tests.conftest import fake_embed
 
 

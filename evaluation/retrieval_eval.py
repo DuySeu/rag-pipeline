@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import statistics
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -18,11 +16,14 @@ from ragas.metrics.collections import (
     Faithfulness,
 )
 
+from core import (
+    load_settings,
+    make_async_client,
+    make_client,
+    make_embedder,
+    open_collection,
+)
 from evaluation.golden import load_golden
-from rag_core.errors import CliError
-from rag_core.openrouter import make_async_client, make_client, make_embedder
-from rag_core.settings import load_settings
-from rag_core.store import open_collection
 from retrieval.pipeline import generate_answer, retrieve
 
 SAMPLES_PATH = Path("evaluation/reports/retrieval_samples.jsonl")
@@ -123,18 +124,3 @@ async def run() -> dict[str, Any]:
     summary = summarize(rows, settings.top_k)
     SUMMARY_PATH.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
-
-
-# Run the retrieval evaluation and print the summary
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    try:
-        print(json.dumps(asyncio.run(run()), indent=2))
-    except CliError as exc:
-        # Rows already written to the samples file stay for the next run to compare
-        print(f"[ERROR {exc.kind.name}] {exc}", file=sys.stderr)
-        sys.exit(exc.kind.value)
-
-
-if __name__ == "__main__":
-    main()

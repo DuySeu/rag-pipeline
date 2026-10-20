@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from rag_core.errors import CliError, ErrorKind
-from retrieval import __main__ as cli
+import main as cli
+from core import CliError, ErrorKind
 from retrieval.pipeline import Answer
 
 
@@ -13,11 +13,13 @@ def run_cli(monkeypatch, result):
             raise result
         return [], result
 
-    monkeypatch.setattr("sys.argv", ["retrieval", "q"])
+    monkeypatch.setattr("sys.argv", ["main.py", "ask", "q"])
+    for name in ("OPENROUTER_API_KEY", "EMBED_MODEL", "CHAT_MODEL"):
+        monkeypatch.setenv(name, "fake")
     monkeypatch.setattr(cli, "make_client", lambda settings: None)
     monkeypatch.setattr(cli, "make_embedder", lambda *args: None)
     monkeypatch.setattr(cli, "open_collection", lambda settings: None)
-    monkeypatch.setattr(cli, "ask", fake_ask)
+    monkeypatch.setattr("retrieval.pipeline.ask", fake_ask)
     with pytest.raises(SystemExit) as exit_info:
         cli.main()
     return exit_info.value.code

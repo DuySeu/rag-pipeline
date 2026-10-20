@@ -4,7 +4,7 @@ Tài liệu gồm hai phần. Phần đầu mô tả thiết kế hiện tại c
 
 ## Bối cảnh và phạm vi
 
-Repo có hai pipeline độc lập, chỉ chia sẻ Chroma store trên đĩa: ingestion ghi, retrieval đọc (`README.md`, `CLAUDE.md`). Ingestion là batch job chạy tay bằng `uv run --env-file .env python -m ingestion`, mỗi lần chạy build lại toàn bộ collection. Corpus hiện có 3 file Markdown tiếng Việt về chính sách nhân sự (`data/docs/nghi-phep.md`, `data/docs/lam-viec-tu-xa.md`, `data/docs/cong-tac-phi.md`), mỗi file dưới 800 ký tự nên mỗi file thành đúng một chunk với cấu hình mặc định (`evaluation/reports/ingestion.json`: `"documents": 3`, `"expected_chunks": 3`).
+Repo có hai pipeline độc lập, chỉ chia sẻ Chroma store trên đĩa: ingestion ghi, retrieval đọc (`README.md`, `CLAUDE.md`). Ingestion là batch job chạy tay bằng `uv run --env-file .env python main.py ingest`, mỗi lần chạy build lại toàn bộ collection. Corpus hiện có 3 file Markdown tiếng Việt về chính sách nhân sự (`data/docs/nghi-phep.md`, `data/docs/lam-viec-tu-xa.md`, `data/docs/cong-tac-phi.md`), mỗi file dưới 800 ký tự nên mỗi file thành đúng một chunk với cấu hình mặc định (`evaluation/reports/ingestion.json`: `"documents": 3`, `"expected_chunks": 3`).
 
 Giả định lập kế hoạch: corpus thật sẽ do người dùng cung cấp sau, khoảng 10 văn bản, gồm các định dạng `.md`, `.txt`, `.docx`, `.xlsx`, `.pptx`, `.pdf`. Số chunk của corpus đó là (pending) cho tới khi có dữ liệu và chạy `ingestion_eval`.
 
@@ -17,7 +17,7 @@ Ngoài phạm vi: retrieval và sinh câu trả lời (xem `docs/plans/2026-10-1
 | Kích thước corpus | khoảng 10 văn bản, dữ liệu sẽ cung cấp sau | giữ full rebuild, giữ vector trong RAM; hash theo file vẫn là `# ponytail` |
 | Định dạng đầu vào | `.md`, `.txt`, `.docx`, `.xlsx`, `.pptx`, `.pdf` | thêm lớp loader, mỗi đuôi file một loader, dispatch theo suffix |
 | Chạy đồng thời | ingestion và retrieval không bao giờ chạy cùng lúc | race giữa hai pipeline không được xử lý, ghi thành quy tắc vận hành |
-| Cấu hình trong store | ghi `EMBED_MODEL`, `CHUNK_SIZE`, `CHUNK_OVERLAP` và id chiến lược chunk vào metadata collection | retrieval đọc và dừng sớm khi lệch `EMBED_MODEL` |
+| Cấu hình trong store | ghi `EMBED_MODEL`, `chunk_size`, `chunk_overlap` và id chiến lược chunk vào metadata collection | retrieval đọc và dừng sớm khi lệch `EMBED_MODEL` |
 | Unicode | chuẩn hoá text về NFC | áp dụng cho mọi loader, không chỉ PDF |
 | Thư viện loader | duyệt `python-docx`, `openpyxl`, `python-pptx`, `pypdf`; chấp nhận `PyMuPDF` (AGPL) làm fallback nếu `pypdf` làm hỏng tiếng Việt | thêm vào `pyproject.toml` khi implement |
 | PDF scan | corpus thật không có PDF scan | OCR ngoài phạm vi; giữ warning cho trang không có text layer như một kiểm tra an toàn |
@@ -34,9 +34,9 @@ Quy trình brainstorming yêu cầu làm rõ mục đích, ràng buộc và tiê
 | --- | --- | --- |
 | Ingestion chạy theo kiểu gì? | Batch, đồng bộ, build lại toàn bộ collection mỗi lần | `ingestion/pipeline.py:54-72` |
 | Hiện hỗ trợ định dạng nào? | `.md`, `.txt`, so khớp đuôi không phân biệt hoa thường, quét đệ quy | `ingestion/pipeline.py:11`, `ingestion/pipeline.py:24-26` |
-| Cắt chunk thế nào? | Cửa sổ ký tự cố định `CHUNK_SIZE`, chồng lấn `CHUNK_OVERLAP` | `ingestion/pipeline.py:30-41` |
+| Cắt chunk thế nào? | Cửa sổ ký tự cố định `chunk_size`, chồng lấn `chunk_overlap` | `ingestion/pipeline.py:30-41` |
 | Chunk id ổn định theo gì? | `<path relative to data/docs>#<index>` | `ingestion/pipeline.py:47` |
-| Embed bằng model nào? | `EMBED_MODEL`, mặc định `nvidia/nemotron-3-embed-1b:free` qua OpenRouter | `rag_core/settings.py:24`, `rag_core/openrouter.py:9` |
+| Embed bằng model nào? | `EMBED_MODEL` trong `.env` (`.env.example`: `nvidia/nemotron-3-embed-1b:free`) qua OpenRouter | `core.py:110`, `core.py:16` |
 | Model embed nhận tối đa bao nhiêu token, có cần prefix không? | 32768 token; cần `passage: ` cho tài liệu và `query: ` cho câu hỏi | mục "Embed model: giới hạn đầu vào và prefix" |
 | OpenAI SDK có tự retry không? | Có, mặc định 2 lần, retry cả 429 và 5xx (openai 3.3.0) | `.venv/lib/python3.12/site-packages/openai/_constants.py:8-13`, `.venv/lib/python3.12/site-packages/openai/_base_client.py:826-866` |
 | Khi API lỗi thì index cũ ra sao? | Còn nguyên, vì embed xong mới drop collection | `ingestion/pipeline.py:58-61` |
@@ -86,16 +86,16 @@ Thứ tự embed trước, drop sau là bất biến của thiết kế: mọi l
 
 | Thành phần | Trách nhiệm | Phụ thuộc | Vị trí |
 | --- | --- | --- | --- |
-| `main` | Parse `--docs` (mặc định `data/docs`), load settings, nối các bước, log số chunk | settings, openrouter, pipeline | `ingestion/__main__.py:15-28` |
+| `main` | Parse `--docs` (mặc định `data/docs`), load settings, nối các bước, log số chunk | settings, openrouter, pipeline | `main.py:22-41` |
 | `load_documents` | Đọc mọi file hỗ trợ dưới `docs_dir` bằng UTF-8, key là path POSIX tương đối, sắp xếp theo path | filesystem | `ingestion/pipeline.py:24-26` |
 | `chunk_text` | Cắt text thành các cửa sổ tối đa `size` ký tự, bước nhảy `size - overlap`, `strip()` và bỏ cửa sổ rỗng | không | `ingestion/pipeline.py:30-41` |
 | `build_chunks` | Gán id `source#index` cho từng chunk | `load_documents`, `chunk_text` | `ingestion/pipeline.py:45-50` |
 | `ingest` | Từ chối input rỗng, embed toàn bộ, tạo lại collection, add theo batch, trả về `collection.count()` | `Embedder`, `recreate_collection` | `ingestion/pipeline.py:54-72` |
-| `make_embedder` | Embed theo batch 64, sắp xếp kết quả theo `index` của response | client OpenAI trỏ tới OpenRouter | `rag_core/openrouter.py:30-39` |
-| `recreate_collection` | Xoá collection nếu có, tạo mới với `hnsw.space = cosine`, không gắn embedding function | chromadb | `rag_core/store.py:20-26` |
-| `load_settings` | Đọc env một lần, kiểm tra `0 <= CHUNK_OVERLAP < CHUNK_SIZE` | env | `rag_core/settings.py:21-37` |
+| `make_embedder` | Embed theo batch 64, sắp xếp kết quả theo `index` của response | client OpenAI trỏ tới OpenRouter | `core.py:189-201` |
+| `recreate_collection` | Xoá collection nếu có, tạo mới với `hnsw.space = cosine`, không gắn embedding function | chromadb | `core.py:236-245` |
+| `load_settings` | Đọc env và `config.yaml` một lần, từ chối key thiếu hoặc lạ, kiểm tra `0 <= chunk_overlap < chunk_size` | env, `config.yaml` | `core.py:75-127` |
 
-`ingest` nhận `Embedder` là một callable (`rag_core/openrouter.py:12`), nên test thay bằng `fake_embed` (`tests/conftest.py:14-15`) mà không gọi mạng.
+`ingest` nhận `Embedder` là một callable (`core.py:71`), nên test thay bằng `fake_embed` (`tests/conftest.py:14-15`) mà không gọi mạng.
 
 ## Lớp loader theo định dạng
 
@@ -146,9 +146,9 @@ Không đề xuất các bộ chuyển đổi đa định dạng kiểu `unstruc
 
 `.docx`: đọc paragraph và bảng theo đúng thứ tự trong body (python-docx tách `paragraphs` và `tables` thành hai danh sách, nên phải duyệt phần tử body để giữ thứ tự). Mỗi dòng bảng nối các ô bằng ` | `. Bỏ header, footer, comment và text box. Một section cho cả file, chunk theo `chunk_text`. Tên style heading (`Heading 1`...) là dữ liệu sẵn có nếu sau này cần splitter theo heading.
 
-`.xlsx`: đơn vị là dòng, chỉ hỗ trợ trường hợp cơ bản (xem mục "Excel: phạm vi và giới hạn"). Mỗi sheet là một chuỗi section; mỗi dòng được viết thành `Sheet <tên>: <header 1>: <giá trị 1>; <header 2>: <giá trị 2>...` để header lặp lại trong mọi chunk, vì một dòng tách khỏi header không còn nghĩa khi retrieve. Gom các dòng liên tiếp tới tối đa `CHUNK_SIZE` ký tự, không cắt giữa dòng; chỉ khi một dòng đơn lẻ dài hơn `CHUNK_SIZE` mới cắt bằng `chunk_text`. Overlap không áp dụng giữa các dòng. Bỏ dòng trống hoàn toàn.
+`.xlsx`: đơn vị là dòng, chỉ hỗ trợ trường hợp cơ bản (xem mục "Excel: phạm vi và giới hạn"). Mỗi sheet là một chuỗi section; mỗi dòng được viết thành `Sheet <tên>: <header 1>: <giá trị 1>; <header 2>: <giá trị 2>...` để header lặp lại trong mọi chunk, vì một dòng tách khỏi header không còn nghĩa khi retrieve. Gom các dòng liên tiếp tới tối đa `chunk_size` ký tự, không cắt giữa dòng; chỉ khi một dòng đơn lẻ dài hơn `chunk_size` mới cắt bằng `chunk_text`. Overlap không áp dụng giữa các dòng. Bỏ dòng trống hoàn toàn.
 
-`.pptx`: một section mỗi slide, metadata `slide`. Text slide gồm title rồi các text frame theo thứ tự shape, duyệt vào group shape, và bảng như `.docx`. Sau text slide là speaker notes, mở đầu bằng nhãn `Ghi chú:` để người đọc và model phân biệt được phần nào nằm trên slide, phần nào là notes; slide không có notes thì không có nhãn. Text slide và notes nằm cùng một section, nên cùng metadata `slide`. Slide thường ngắn hơn `CHUNK_SIZE` nên thường một chunk mỗi slide; slide dài thì `chunk_text` trong slide đó. Slide không có cả text lẫn notes thì không sinh chunk.
+`.pptx`: một section mỗi slide, metadata `slide`. Text slide gồm title rồi các text frame theo thứ tự shape, duyệt vào group shape, và bảng như `.docx`. Sau text slide là speaker notes, mở đầu bằng nhãn `Ghi chú:` để người đọc và model phân biệt được phần nào nằm trên slide, phần nào là notes; slide không có notes thì không có nhãn. Text slide và notes nằm cùng một section, nên cùng metadata `slide`. Slide thường ngắn hơn `chunk_size` nên thường một chunk mỗi slide; slide dài thì `chunk_text` trong slide đó. Slide không có cả text lẫn notes thì không sinh chunk.
 
 `.pdf`: một section mỗi trang, metadata `page`. Corpus thật không có PDF scan nên OCR ngoài phạm vi. Trang không có text layer vẫn được xử lý như một kiểm tra an toàn: không sinh chunk, log warning kèm số trang, và `ingestion_eval` báo số trang như vậy. Text tiếng Việt trích từ PDF có thể ở dạng NFD hoặc dấu bị tách; NFC sửa được trường hợp dấu tổ hợp, không sửa được font nhúng thiếu bảng ánh xạ Unicode (ra ký tự sai hẳn). Trường hợp sau phải kiểm tra trên mẫu PDF thật trước khi chọn giữa `pypdf` và `PyMuPDF`. Header và footer lặp lại ở mỗi trang sẽ lẫn vào chunk; chưa xử lý, chỉ làm nếu `retrieval_samples.jsonl` cho thấy chúng làm nhiễu kết quả.
 
@@ -193,7 +193,7 @@ File không đọc được (hỏng, có mật khẩu, không phải UTF-8 với
 | `embed_model` | `settings.embed_model` | retrieval dừng sớm khi khác `EMBED_MODEL` hiện tại; `ingestion_eval` báo lệch |
 | `chunk_size` | `settings.chunk_size` | `ingestion_eval` báo lệch |
 | `chunk_overlap` | `settings.chunk_overlap` | `ingestion_eval` báo lệch |
-| `chunk_strategy` | hằng số trong code, đổi mỗi khi logic chunk hoặc loader đổi, vd `char-window-v1` | `ingestion_eval` báo lệch; giúp so sánh các lần `retrieval_eval` |
+| `chunk_strategy` | tên strategy trong `config.yaml` (`fixed`, `recursive`, `heading`) cộng `CHUNKING_VERSION` của `ingestion/chunking.py`, vd `fixed-v1`; tăng version mỗi khi logic chunk hoặc loader đổi | `ingestion_eval` báo lệch; giúp so sánh các lần `retrieval_eval` |
 | `embed_query_prefix` | `settings.embed_query_prefix` | retrieval dừng sớm khi khác setting hiện tại; `ingestion_eval` báo lệch |
 | `embed_passage_prefix` | `settings.embed_passage_prefix` | `ingestion_eval` báo lệch |
 | `corpus_hash` | phiên bản corpus, xem mục "Phần ingestion phục vụ đánh giá" | `ingestion_eval` và `retrieval_eval` so với hash tính lại từ `data/docs`; `retrieval_eval` ghi vào report |
@@ -202,7 +202,7 @@ Không dùng khoá bắt đầu bằng `hnsw:` vì Chroma đọc các khoá đó
 
 ## Phần ingestion phục vụ đánh giá
 
-Thiết kế đánh giá nằm ở `docs/plans/2026-10-19-evaluation-design.md`, trạng thái hoãn tới khi xong ingestion và retrieval. Ingestion chỉ cần sinh ra hai thứ dưới đây để eval xây được sau này. Quy tắc "retrieval changes are eval-driven" của `CLAUDE.md` vẫn giữ, nên mọi đổi `CHUNK_SIZE`, `CHUNK_OVERLAP` hay chiến lược chunk so với mặc định hiện tại chờ tới khi eval chạy được.
+Thiết kế đánh giá nằm ở `docs/plans/2026-10-19-evaluation-design.md`, trạng thái hoãn tới khi xong ingestion và retrieval. Ingestion chỉ cần sinh ra hai thứ dưới đây để eval xây được sau này. Quy tắc "retrieval changes are eval-driven" của `CLAUDE.md` vẫn giữ, nên mọi đổi `chunk_size`, `chunk_overlap` hay chiến lược chunk so với mặc định hiện tại chờ tới khi eval chạy được.
 
 ### Phiên bản corpus cố định
 
@@ -247,18 +247,19 @@ Golden set dùng cùng kiểu path: hiện là `sources` (`evaluation/datasets/g
 
 ## Cấu hình
 
-Mọi giá trị đọc từ env qua `rag_core/settings.py:21-31`, không có file config riêng. Thay đổi đã chốt thêm hai biến prefix; `chunk_strategy` là hằng số trong code.
+`OPENROUTER_API_KEY`, `EMBED_MODEL` và `CHAT_MODEL` đọc từ env (`.env`), các giá trị còn lại đọc từ `config.yaml`, cả hai qua `load_settings` (`core.py:75-121`). Biến env trống hoặc chưa đặt thì dừng với `[ERROR CONFIG]`, code 5, vì không có model mặc định. Key trong `config.yaml` để trống (`key:`, `null` hoặc chuỗi trắng) thì lấy giá trị ở cột Mặc định (`CONFIG_DEFAULTS`); riêng hai prefix giữ `""` nghĩa là không dùng prefix. Thiếu hẳn key hoặc key lạ thì dừng ngay. Thay đổi đã chốt thêm hai prefix; `chunk_strategy` chọn trong `config.yaml`, các strategy nằm ở `ingestion/chunking.py`.
 
-| Biến | Mặc định | Ảnh hưởng tới ingestion |
+| Setting | Mặc định | Ảnh hưởng tới ingestion |
 | --- | --- | --- |
-| `OPENROUTER_API_KEY` | rỗng | thiếu thì dừng ở `make_client` (`rag_core/openrouter.py:17-18`) |
-| `EMBED_MODEL` | `nvidia/nemotron-3-embed-1b:free` | đổi thì phải chạy lại ingestion, retrieval phải dùng cùng giá trị |
-| `CHROMA_DIR` | `data/chroma` | nơi lưu store |
-| `COLLECTION` | `docs` | tên collection bị drop và tạo lại |
-| `CHUNK_SIZE` | `800` | đơn vị là ký tự Python (code point), không phải token |
-| `CHUNK_OVERLAP` | `100` | phải nhỏ hơn `CHUNK_SIZE` (`rag_core/settings.py:34-35`) |
-| `EMBED_QUERY_PREFIX` (mới) | `query: ` | ingestion chỉ ghi vào metadata collection; retrieval dùng khi embed câu hỏi |
-| `EMBED_PASSAGE_PREFIX` (mới) | `passage: ` | thêm vào trước text chunk khi embed, không lưu vào `document` |
+| `OPENROUTER_API_KEY` | bắt buộc | trống thì dừng ở `load_settings` với `[ERROR CONFIG]`, code 5 |
+| `EMBED_MODEL` | bắt buộc (`.env.example`: `nvidia/nemotron-3-embed-1b:free`) | đổi thì phải chạy lại ingestion, retrieval phải dùng cùng giá trị |
+| `chroma_dir` | `data/chroma` | nơi lưu store |
+| `collection` | `docs` | tên collection bị drop và tạo lại |
+| `chunk_strategy` | `fixed` | `fixed` là cửa sổ ký tự cố định; `recursive` cắt theo đoạn, dòng, câu rồi gom lại; `heading` bắt đầu chunk mới ở heading Markdown hoặc `Phần`/`Chương`/`Mục`/`Điều`. Section đọc theo dòng (Excel) luôn gom nguyên dòng |
+| `chunk_size` | `800` | đơn vị là ký tự Python (code point), không phải token |
+| `chunk_overlap` | `100` | phải nhỏ hơn `chunk_size` (`core.py:124-125`) |
+| `embed_query_prefix` (mới) | `query: ` | ingestion chỉ ghi vào metadata collection; retrieval dùng khi embed câu hỏi |
+| `embed_passage_prefix` (mới) | `passage: ` | thêm vào trước text chunk khi embed, không lưu vào `document` |
 
 ## Embed model: giới hạn đầu vào và prefix
 
@@ -271,19 +272,19 @@ Thông tin công khai về `nvidia/nemotron-3-embed-1b:free`:
 
 Hai nguồn khớp nhau về giới hạn 32768 token. OpenRouter không liên kết model này với repo Hugging Face nào (`hugging_face_id: null`), nên việc hai bên là cùng một checkpoint là suy ra từ tên (unverified). Không nguồn nào nói OpenRouter tự thêm prefix phía server (unverified).
 
-`CHUNK_SIZE` so với giới hạn token: chunk không bao giờ dài hơn `CHUNK_SIZE` ký tự (`ingestion/pipeline.py:35`; lớp loader giữ quy tắc này cho mọi định dạng). Chưa đo số token trên mỗi ký tự tiếng Việt với tokenizer của model (unverified). Ước lượng chặn trên: nếu tokenizer tách theo byte UTF-8 thì một ký tự tiếng Việt NFC tốn tối đa 3 byte, nên 800 ký tự cộng prefix tốn tối đa khoảng 2400 token, dưới xa 32768 (giả định tokenizer kiểu byte-level là unverified). Giới hạn token vì vậy không ràng buộc `CHUNK_SIZE`; `CHUNK_SIZE` chọn theo chất lượng retrieval. Giới hạn tổng token cho một request chứa 64 input (`rag_core/openrouter.py:10`) không được nêu (`per_request_limits: null`), unverified.
+`chunk_size` so với giới hạn token: chunk không bao giờ dài hơn `chunk_size` ký tự (`ingestion/pipeline.py:35`; lớp loader giữ quy tắc này cho mọi định dạng). Chưa đo số token trên mỗi ký tự tiếng Việt với tokenizer của model (unverified). Ước lượng chặn trên: nếu tokenizer tách theo byte UTF-8 thì một ký tự tiếng Việt NFC tốn tối đa 3 byte, nên 800 ký tự cộng prefix tốn tối đa khoảng 2400 token, dưới xa 32768 (giả định tokenizer kiểu byte-level là unverified). Giới hạn token vì vậy không ràng buộc `chunk_size`; `chunk_size` chọn theo chất lượng retrieval. Giới hạn tổng token cho một request chứa 64 input (`core.py:17`) không được nêu (`per_request_limits: null`), unverified.
 
-Prefix: ingestion embed `EMBED_PASSAGE_PREFIX + text` cho từng chunk, nhưng `document` lưu trong Chroma vẫn là text không có prefix, nên chunk đưa vào prompt và dùng để khớp evidence không đổi. `make_embedder` (`rag_core/openrouter.py:30-39`) nhận thêm prefix. Hai prefix ghi vào metadata collection; đổi prefix là phải chạy lại ingestion, và retrieval phát hiện lệch qua `embed_query_prefix`. Thêm prefix là thay đổi cách retrieve, nên theo `CLAUDE.md` cần `retrieval_eval` trước và sau; eval đang hoãn và store chưa từng được build (`evaluation/reports/ingestion.json`: `"stored_chunks": 0`), nên đề xuất làm theo model card ngay từ lần build đầu và để eval xác nhận sau.
+Prefix: ingestion embed `embed_passage_prefix + text` cho từng chunk, nhưng `document` lưu trong Chroma vẫn là text không có prefix, nên chunk đưa vào prompt và dùng để khớp evidence không đổi. `make_embedder` (`core.py:189-201`) nhận thêm prefix. Hai prefix ghi vào metadata collection; đổi prefix là phải chạy lại ingestion, và retrieval phát hiện lệch qua `embed_query_prefix`. Thêm prefix là thay đổi cách retrieve, nên theo `CLAUDE.md` cần `retrieval_eval` trước và sau; eval đang hoãn và store chưa từng được build (`evaluation/reports/ingestion.json`: `"stored_chunks": 0`), nên đề xuất làm theo model card ngay từ lần build đầu và để eval xác nhận sau.
 
 ## Rate limit, hết quota và exit code
 
-Người dùng chốt: quota là giới hạn ngày của model free tier; hết quota thì dừng ngay với lỗi nói rõ, không retry vô hạn. Tài liệu OpenRouter, cách phân loại 429 bằng `GET /api/v1/key` (`free_model_daily_requests.remaining`), giới hạn retry của SDK và bảng exit code nằm ở `docs/plans/2026-10-19-retrieval-pipeline-design.md`, mục "Rate limit và hết quota" và "Đầu ra CLI và exit code"; hàm phân loại và bảng exit code dùng chung trong `rag_core`.
+Người dùng chốt: quota là giới hạn ngày của model free tier; hết quota thì dừng ngay với lỗi nói rõ, không retry vô hạn. Tài liệu OpenRouter, cách phân loại 429 bằng `GET /api/v1/key` (`free_model_daily_requests.remaining`), giới hạn retry của SDK và bảng exit code nằm ở `docs/plans/2026-10-19-retrieval-pipeline-design.md`, mục "Rate limit và hết quota" và "Đầu ra CLI và exit code"; hàm phân loại và bảng exit code dùng chung trong `core.py`.
 
 Áp vào ingestion:
 
-- Lời gọi embed (`rag_core/openrouter.py:35`) giữ retry của SDK, `max_retries=2` ghi tường minh. Hết retry thì phân loại lỗi và dừng.
+- Lời gọi embed (`core.py:195`) giữ retry của SDK, `max_retries=2` ghi tường minh. Hết retry thì phân loại lỗi và dừng.
 - Mọi lỗi API xảy ra trong `embed` (`ingestion/pipeline.py:60`), trước `recreate_collection`, nên index cũ còn nguyên theo đúng quy tắc embed trước, drop sau. Không ghi gì vào store.
-- `ingestion/__main__.py` in một dòng lỗi có nhãn ra stderr và thoát với code chung: `[ERROR CONFIG]` 5 (thiếu key, 401), `[ERROR RATE_LIMIT]` 6, `[ERROR QUOTA]` 7 (hết giới hạn ngày hoặc 402), `[ERROR API]` 8. Thông báo nói rõ index cũ còn nguyên, và với code 7 là phải chờ ngày UTC sau hoặc thêm credit. Thành công thoát code 0 như hiện tại. Lỗi loader (file hỏng, Excel không hỗ trợ) giữ `ValueError` hiện tại, thoát code 1.
+- `main.py` in một dòng lỗi có nhãn ra stderr và thoát với code chung: `[ERROR CONFIG]` 5 (thiếu key, 401), `[ERROR RATE_LIMIT]` 6, `[ERROR QUOTA]` 7 (hết giới hạn ngày hoặc 402), `[ERROR API]` 8. Thông báo nói rõ index cũ còn nguyên, và với code 7 là phải chờ ngày UTC sau hoặc thêm credit. Thành công thoát code 0 như hiện tại. Lỗi loader (file hỏng, Excel không hỗ trợ) giữ `ValueError` hiện tại, thoát code 1.
 - Vector đã embed xong trước khi lỗi bị bỏ; lần chạy sau embed lại từ đầu. Với khoảng 10 văn bản và batch 64 input mỗi request, một lần ingest chỉ tốn vài request (số chunk là (pending)).
 
 ## Quyết định thiết kế và phương án đã cân nhắc
@@ -308,11 +309,11 @@ Toàn bộ vector nằm trong bộ nhớ trước khi `recreate_collection` ch�
 
 ### Đồng bộ thay vì async
 
-Embedder gọi tuần tự từng batch 64 (`rag_core/openrouter.py:33-36`). Với free tier và khoảng 10 văn bản, bắn song song chủ yếu làm tăng xác suất bị 429. Async ingestion không thêm mặc định (`CLAUDE.md`).
+Embedder gọi tuần tự từng batch 64 (`core.py:192-199`). Với free tier và khoảng 10 văn bản, bắn song song chủ yếu làm tăng xác suất bị 429. Async ingestion không thêm mặc định (`CLAUDE.md`).
 
 ### Không chạy đồng thời với retrieval
 
-Người dùng xác nhận ingestion và retrieval không bao giờ chạy cùng lúc. Thiết kế không xử lý race giữa hai pipeline và không thêm cơ chế build vào collection tạm. Quy tắc vận hành: không chạy `python -m retrieval` hoặc `evaluation.retrieval_eval` khi `python -m ingestion` chưa kết thúc.
+Người dùng xác nhận ingestion và retrieval không bao giờ chạy cùng lúc. Thiết kế không xử lý race giữa hai pipeline và không thêm cơ chế build vào collection tạm. Quy tắc vận hành: không chạy `python main.py ask` hoặc `python main.py eval-retrieval` khi `python main.py ingest` chưa kết thúc.
 
 ## Failure modes
 
@@ -327,24 +328,24 @@ Người dùng xác nhận ingestion và retrieval không bao giờ chạy cùng
 | Sheet ẩn | bỏ qua, log info | không có nội dung sheet đó | mục "Excel: phạm vi và giới hạn" |
 | Font PDF thiếu ánh xạ Unicode | text sai mà không có lỗi; NFC không sửa được | chunk sai nội dung | kiểm tra bằng mắt trên mẫu PDF thật |
 | Ô công thức Excel không có giá trị cache | ô ra rỗng | chunk thiếu giá trị | hành vi `data_only=True` của openpyxl |
-| Thiếu `OPENROUTER_API_KEY` | hiện tại: `SystemExit` code 1 ở `make_client`, sau khi đã chunk. Sau thay đổi: `[ERROR CONFIG]`, code 5 | giữ nguyên | `rag_core/openrouter.py:17-18` |
+| Thiếu `OPENROUTER_API_KEY` | hiện tại: `SystemExit` code 1 ở `make_client`, sau khi đã chunk. Sau thay đổi: `[ERROR CONFIG]`, code 5 | giữ nguyên | `core.py:132-136` |
 | 429 giới hạn mỗi phút giữa chừng | SDK retry tối đa 2 lần; vẫn lỗi thì `[ERROR RATE_LIMIT]`, code 6; vector đã có bị bỏ, chạy lại sẽ embed lại từ đầu | giữ nguyên | `ingestion/pipeline.py:60`, `.venv/lib/python3.12/site-packages/openai/_base_client.py:858-860` |
 | Hết giới hạn request free tier trong ngày, hoặc 402 | dừng ngay sau retry của SDK, `[ERROR QUOTA]`, code 7, thông báo nói rõ đã chạm giới hạn ngày | giữ nguyên | mục "Rate limit, hết quota và exit code" |
 | 5xx, lỗi mạng | SDK retry tối đa 2 lần; vẫn lỗi thì `[ERROR API]`, code 8 | giữ nguyên | `.venv/lib/python3.12/site-packages/openai/_base_client.py:863-865` |
-| Chunk vượt giới hạn token của model | không xảy ra với `CHUNK_SIZE` hiện tại theo ước lượng chặn trên (unverified) | đúng | mục "Embed model: giới hạn đầu vào và prefix" |
+| Chunk vượt giới hạn token của model | không xảy ra với `chunk_size` hiện tại theo ước lượng chặn trên (unverified) | đúng | mục "Embed model: giới hạn đầu vào và prefix" |
 | Response embed trả thiếu vector | không kiểm tra số lượng trước khi drop; `collection.add` nhận ids và embeddings lệch độ dài sau khi collection đã bị xoá (hành vi chính xác của Chroma: unverified) | có thể rỗng | `ingestion/pipeline.py:60-70` |
 | Chroma lỗi trong `collection.add` (đĩa đầy, lỗi ghi) | exception sau khi drop | rỗng hoặc thiếu chunk, `ingestion_eval` báo `missing_chunks` | `ingestion/pipeline.py:61-70`, `evaluation/ingestion_eval.py:40` |
-| Retrieval chạy trong lúc ingestion đang ghi | không xử lý theo thiết kế; điều kiện tiên quyết là không chạy đồng thời. Nếu vi phạm: retrieval có thể thấy store rỗng hoặc thiếu chunk, hoặc `get_or_create` của retrieval tạo collection giữa `delete_collection` và `create_collection` làm ingestion fail | không xác định | `rag_core/store.py:14`, `rag_core/store.py:22-26` |
-| Hai lần ingestion chạy cùng lúc | không xử lý, cùng điều kiện tiên quyết | không xác định | `rag_core/store.py:20-26` |
-| Đổi `EMBED_MODEL` mà không ingest lại | hiện tại: store không ghi tên model, retrieval cho kết quả sai hoặc Chroma báo lỗi số chiều. Sau thay đổi: retrieval dừng sớm với thông báo nêu cả hai model, `ingestion_eval` báo `config_mismatch` | lệch model, được phát hiện | `ingestion/pipeline.py:68`, `rag_core/store.py:24-26` |
-| Đổi `CHUNK_SIZE`/`CHUNK_OVERLAP` hoặc logic chunk mà không ingest lại | sau thay đổi: `ingestion_eval` báo `config_mismatch` | lệch cấu hình, được phát hiện | metadata collection |
+| Retrieval chạy trong lúc ingestion đang ghi | không xử lý theo thiết kế; điều kiện tiên quyết là không chạy đồng thời. Nếu vi phạm: retrieval có thể thấy store rỗng hoặc thiếu chunk, hoặc `get_or_create` của retrieval tạo collection giữa `delete_collection` và `create_collection` làm ingestion fail | không xác định | `core.py:207`, `core.py:238-245` |
+| Hai lần ingestion chạy cùng lúc | không xử lý, cùng điều kiện tiên quyết | không xác định | `core.py:236-245` |
+| Đổi `EMBED_MODEL` mà không ingest lại | hiện tại: store không ghi tên model, retrieval cho kết quả sai hoặc Chroma báo lỗi số chiều. Sau thay đổi: retrieval dừng sớm với thông báo nêu cả hai model, `ingestion_eval` báo `config_mismatch` | lệch model, được phát hiện | `ingestion/pipeline.py:68`, `core.py:240-245` |
+| Đổi `chunk_size`/`chunk_overlap` hoặc logic chunk mà không ingest lại | sau thay đổi: `ingestion_eval` báo `config_mismatch` | lệch cấu hình, được phát hiện | metadata collection |
 | Store build trước thay đổi, chưa có metadata | retrieval dừng và yêu cầu chạy lại ingestion | phải rebuild một lần | metadata collection |
 | Sửa nội dung file mà số chunk không đổi, chưa ingest lại | hiện tại: id giống hệt nên `ingestion_eval` vẫn pass dù text trong store đã cũ. Sau thay đổi: `corpus_hash_mismatch` làm fail `ingestion_eval`, `retrieval_eval` dừng | lệch nội dung, được phát hiện | `evaluation/ingestion_eval.py:26-41` |
 | Text tiếng Việt ở dạng Unicode tổ hợp (NFD) | hiện tại: không chuẩn hoá, cửa sổ có thể cắt giữa chữ cái và dấu. Sau thay đổi: chuẩn hoá NFC khi load | đúng sau thay đổi | `ingestion/pipeline.py:26`, `ingestion/pipeline.py:35` |
 
 ## Kiểm chứng
 
-`ingestion_eval` (`evaluation/ingestion_eval.py:22-58`) chunk lại docs bằng đúng `CHUNK_SIZE`/`CHUNK_OVERLAP` hiện tại và so với store, không gọi API. Report ghi vào `evaluation/reports/ingestion.json`, exit 1 khi có `documents_not_in_store`, `missing_chunks`, `stale_chunks` hoặc `golden_sources_not_in_store` (`evaluation/ingestion_eval.py:51-57`, `evaluation/ingestion_eval.py:74`). `duplicate_chunks` và `chunk_chars` chỉ để quan sát, không làm fail. Sau thay đổi, report thêm `corpus_hash`, các mục làm fail `config_mismatch` và `corpus_hash_mismatch`, và các mục chỉ để quan sát: số chunk theo định dạng file, danh sách trang PDF không có text.
+`ingestion_eval` (`evaluation/ingestion_eval.py:22-58`) chunk lại docs bằng đúng `chunk_size`/`chunk_overlap` hiện tại và so với store, không gọi API. Report ghi vào `evaluation/reports/ingestion.json`, exit 1 khi có `documents_not_in_store`, `missing_chunks`, `stale_chunks` hoặc `golden_sources_not_in_store` (`evaluation/ingestion_eval.py:51-57`, `evaluation/ingestion_eval.py:74`). `duplicate_chunks` và `chunk_chars` chỉ để quan sát, không làm fail. Sau thay đổi, report thêm `corpus_hash`, các mục làm fail `config_mismatch` và `corpus_hash_mismatch`, và các mục chỉ để quan sát: số chunk theo định dạng file, danh sách trang PDF không có text.
 
 Report hiện có trong repo cho thấy store chưa được build: `"stored_chunks": 0`, `"missing_chunks": ["cong-tac-phi.md#0", "lam-viec-tu-xa.md#0", "nghi-phep.md#0"]`, `"passed": false` (`evaluation/reports/ingestion.json`). Thư mục `data/chroma` chưa tồn tại. Cần chạy ingestion rồi chạy lại `ingestion_eval` để có trạng thái pass làm mốc.
 
@@ -363,10 +364,10 @@ Test cần thêm cho thay đổi đã chốt, vẫn không gọi mạng. File m�
 - metadata collection có đủ 7 khoá sau ingest, và `ingestion_eval` fail khi `chunk_size` trong store khác settings;
 - `corpus_hash` đổi khi sửa một byte của một file, không đổi khi chỉ đổi thứ tự liệt kê file; `ingestion_eval` fail với `corpus_hash_mismatch` khi sửa file sau ingest;
 - chunk mang đúng locator theo định dạng;
-- embedder nhận text có `EMBED_PASSAGE_PREFIX` ở đầu, còn `document` lưu trong store không có prefix;
+- embedder nhận text có `embed_passage_prefix` ở đầu, còn `document` lưu trong store không có prefix;
 - embedder giả raise lỗi 429 với `/api/v1/key` giả trả `remaining = 0` thì ingestion thoát code 7 và store cũ còn nguyên; `remaining > 0` thì code 6; lỗi 5xx thì code 8.
 
-Thêm loader và thay đổi chunking là thay đổi retrieval theo `CLAUDE.md`, cần `retrieval_eval` trước và sau. Eval được hoãn (`docs/plans/2026-10-19-evaluation-design.md`), nên trong lúc này lớp loader được kiểm chứng bằng test và `ingestion_eval`, còn các tham số chunk giữ mặc định hiện tại; số đo chất lượng retrieval là (pending) tới khi eval chạy được. Với 3 chunk và `TOP_K=4`, mọi truy vấn hiện lấy về toàn bộ corpus, nên đo retrieval chỉ có ý nghĩa khi số chunk của corpus thật (pending) lớn hơn `TOP_K`.
+Thêm loader và thay đổi chunking là thay đổi retrieval theo `CLAUDE.md`, cần `retrieval_eval` trước và sau. Eval được hoãn (`docs/plans/2026-10-19-evaluation-design.md`), nên trong lúc này lớp loader được kiểm chứng bằng test và `ingestion_eval`, còn các tham số chunk giữ mặc định hiện tại; số đo chất lượng retrieval là (pending) tới khi eval chạy được. Với 3 chunk và `top_k: 4`, mọi truy vấn hiện lấy về toàn bộ corpus, nên đo retrieval chỉ có ý nghĩa khi số chunk của corpus thật (pending) lớn hơn `top_k`.
 
 ## Nâng cấp có điều kiện
 
@@ -380,7 +381,7 @@ Không mục nào dưới đây là mặc định. Mỗi mục chỉ làm khi đ
 | Lọc header/footer lặp ở PDF | `retrieval_samples.jsonl` cho thấy header/footer làm nhiễu chunk được lấy về | thêm heuristic theo từng bộ tài liệu |
 | Kiểm tra `len(vectors) == len(chunks)` trước khi drop | để đóng khe hở mất index khi response thiếu vector | một dòng, không có chi phí đáng kể |
 | Async ingestion | thời gian ingestion đo được vượt mức chấp nhận và quota cho phép gọi song song | thêm độ phức tạp, dễ chạm rate limit free tier |
-| Đổi vector store | Chroma trên đĩa không đáp ứng được kích thước corpus | migration, dependency mới, phải viết lại `rag_core/store.py` |
+| Đổi vector store | Chroma trên đĩa không đáp ứng được kích thước corpus | migration, dependency mới, phải viết lại `core.py` |
 
 ## Câu hỏi đã trả lời
 
@@ -393,7 +394,7 @@ Không mục nào dưới đây là mặc định. Mỗi mục chỉ làm khi đ
 - Có tiến trình đọc store trong lúc ingestion chạy không: không, hai pipeline không chạy đồng thời; race không được xử lý, ghi thành quy tắc vận hành.
 - Ghi tên embed model và cấu hình chunk vào metadata collection: có, kèm id chiến lược chunk; retrieval dừng sớm khi lệch `EMBED_MODEL`.
 - Chuẩn hoá Unicode: chuẩn hoá NFC cho text từ mọi loader.
-- Giới hạn token và prefix của embed model: 32768 token, không ràng buộc `CHUNK_SIZE` hiện tại; cần `passage: `/`query: ` theo model card, ghi vào metadata collection.
+- Giới hạn token và prefix của embed model: 32768 token, không ràng buộc `chunk_size` hiện tại; cần `passage: `/`query: ` theo model card, ghi vào metadata collection.
 - Hết quota: dừng ngay với lỗi rõ ràng và exit code riêng, index cũ còn nguyên.
 - Phát hiện sửa file mà chưa ingest lại: dùng `corpus_hash` trong metadata collection, thay cho so sánh text chunk.
 - Golden set trỏ tới file trong thư mục con: được, `doc_id` là path tương đối; test golden set đổi sang kiểm tra theo path (xem retrieval doc).
@@ -401,4 +402,4 @@ Không mục nào dưới đây là mặc định. Mỗi mục chỉ làm khi đ
 ## Câu hỏi mở
 
 - OpenRouter có phục vụ đúng checkpoint `nvidia/Nemotron-3-Embed-1B-BF16` và không tự thêm prefix phía server không? Tài liệu công khai không nêu (unverified).
-- Số token trên mỗi ký tự tiếng Việt với tokenizer của model là bao nhiêu? Chưa đo (unverified); chỉ cần khi `CHUNK_SIZE` tăng lên hàng chục nghìn ký tự.
+- Số token trên mỗi ký tự tiếng Việt với tokenizer của model là bao nhiêu? Chưa đo (unverified); chỉ cần khi `chunk_size` tăng lên hàng chục nghìn ký tự.

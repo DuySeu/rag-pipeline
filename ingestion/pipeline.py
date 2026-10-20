@@ -4,15 +4,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from core import Embedder, Settings, recreate_collection
+from ingestion.chunking import CHUNKING_VERSION, STRATEGIES, chunk_lines
 from ingestion.corpus import load_documents
 from ingestion.loaders import Section
-from rag_core.openrouter import Embedder
-from rag_core.settings import Settings
-from rag_core.store import recreate_collection
 
 CHROMA_ADD_BATCH_SIZE = 1000
-# Bump whenever chunking or loader logic changes, so stores built with different logic are told apart
-CHUNK_STRATEGY = "section-window-v1"
 
 
 @dataclass(frozen=True)
@@ -24,47 +21,21 @@ class Chunk:
     location: dict[str, str | int] = field(default_factory=dict)
 
 
-# Split text into windows of at most size characters that overlap by overlap characters
-def chunk_text(text: str, size: int, overlap: int) -> list[str]:
-    # ponytail: fixed character window, switch to a sentence/heading splitter if recall suffers
-    chunks: list[str] = []
-    start = 0
-    while start < len(text):
-        piece = text[start : start + size].strip()
-        if piece:
-            chunks.append(piece)
-        if start + size >= len(text):
-            break
-        start += size - overlap
-    return chunks
-
-
-# Pack whole lines into chunks of at most size characters, windowing only a line longer than that
-def chunk_lines(text: str, size: int, overlap: int) -> list[str]:
-    chunks: list[str] = []
-    current = ""
-    for line in text.splitlines():
-        if len(line) > size:
-            chunks.extend(filter(None, [current]))
-            chunks.extend(chunk_text(line, size, overlap))
-            current = ""
-        elif current and len(current) + 1 + len(line) > size:
-            chunks.append(current)
-            current = line
-        else:
-            current = f"{current}\n{line}" if current else line
-    return chunks + [current] if current.strip() else chunks
-
-
 # Turn loaded documents into chunks with stable ids; indexes run on across a file's sections
 def chunk_documents(
-    documents: Mapping[str, Sequence[Section]], size: int, overlap: int
+    documents: Mapping[str, Sequence[Section]], size: int, overlap: int, strategy: str = "fixed"
 ) -> list[Chunk]:
+    if strategy not in STRATEGIES:
+        raise ValueError(
+            f"Unknown chunk_strategy {strategy!r}; use one of: {' | '.join(STRATEGIES)}"
+        )
+
     chunks: list[Chunk] = []
     for source, sections in documents.items():
         index = 0
         for section in sections:
-            split = chunk_lines if section.line_wise else chunk_text
+            # Line-wise sections (Excel rows) are always packed whole, whatever the strategy
+            split = chunk_lines if section.line_wise else STRATEGIES[strategy]
             for text in split(section.text, size, overlap):
                 chunks.append(Chunk(f"{source}#{index}", source, index, text, section.location))
                 index += 1
@@ -72,8 +43,8 @@ def chunk_documents(
 
 
 # Turn every document under docs_dir into chunks with stable ids
-def build_chunks(docs_dir: Path, size: int, overlap: int) -> list[Chunk]:
-    return chunk_documents(load_documents(docs_dir), size, overlap)
+def build_chunks(docs_dir: Path, size: int, overlap: int, strategy: str = "fixed") -> list[Chunk]:
+    return chunk_documents(load_documents(docs_dir), size, overlap, strategy)
 
 
 # The settings a store was built with, written to the collection so mismatches can be detected
@@ -82,7 +53,7 @@ def collection_metadata(settings: Settings, corpus_hash: str) -> dict[str, str |
         "embed_model": settings.embed_model,
         "chunk_size": settings.chunk_size,
         "chunk_overlap": settings.chunk_overlap,
-        "chunk_strategy": CHUNK_STRATEGY,
+        "chunk_strategy": f"{settings.chunk_strategy}-v{CHUNKING_VERSION}",
         "embed_query_prefix": settings.embed_query_prefix,
         "embed_passage_prefix": settings.embed_passage_prefix,
         "corpus_hash": corpus_hash,
