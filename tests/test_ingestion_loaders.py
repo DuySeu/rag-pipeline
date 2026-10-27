@@ -8,7 +8,7 @@ from docx import Document
 from pptx import Presentation
 from pypdf import PdfWriter
 
-from core import open_collection
+from core.store import open_collection
 from ingestion.chunking import chunk_lines
 from ingestion.corpus import corpus_hash, load_documents
 from ingestion.loaders import LoadError, load_docx, load_pdf, load_pptx, load_xlsx

@@ -4,7 +4,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core import Embedder, Settings, recreate_collection
+from core.config import Settings
+from core.openrouter import Embedder
+from core.store import recreate_collection
 from ingestion.chunking import CHUNKING_VERSION, STRATEGIES, chunk_lines
 from ingestion.corpus import load_documents
 from ingestion.loaders import Section

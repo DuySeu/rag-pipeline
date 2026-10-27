@@ -32,8 +32,6 @@ def test_main_ask_exits_two_without_a_question(monkeypatch, capsys):
 
 def test_main_exits_five_with_error_label_when_env_value_is_empty(monkeypatch, capsys):
     monkeypatch.setenv("OPENROUTER_API_KEY", "")
-    monkeypatch.setenv("EMBED_MODEL", "embed")
-    monkeypatch.setenv("CHAT_MODEL", "chat")
 
     assert run_main(monkeypatch, "eval-ingestion") == 5
 

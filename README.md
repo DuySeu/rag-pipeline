@@ -10,7 +10,7 @@ Two pipelines that run on their own and share only the Chroma store on disk (`da
 | `ingestion/` | Load, chunk, embed, write to Chroma |
 | `retrieval/` | Embed the question, query Chroma, answer with the chat model |
 | `config.yaml` | Non-secret settings: store path, chunking, `top_k`, `max_distance`, embed prefixes |
-| `core.py` | Settings, OpenRouter client and embedder, Chroma collection access |
+| `core/` | `constants.py` (model ids, defaults), `config.py` (settings), `errors.py`, `openrouter.py` (client, embedder), `store.py` (Chroma collection) |
 | `main.py` | One entry point: `python main.py {ingest,ask,eval-ingestion,eval-retrieval} [args...]` |
 | `evaluation/datasets/golden.jsonl` | Golden questions with reference answer and source file |
 | `evaluation/ingestion_eval.py` | Checks the store against the docs folder, no API calls |
@@ -21,7 +21,7 @@ Two pipelines that run on their own and share only the Chroma store on disk (`da
 
 ```sh
 cp .env.example .env   # then fill in OPENROUTER_API_KEY; other settings live in config.yaml
-uv sync
+uv venv && source .venv/bin/activate && uv pip install -r requirements.txt
 uv run --env-file .env python main.py ingest
 uv run --env-file .env python main.py ask "Mỗi tuần được làm việc từ xa tối đa mấy ngày?"
 uv run --env-file .env python main.py eval-ingestion
@@ -29,7 +29,7 @@ uv run --env-file .env python main.py eval-retrieval
 uv run pytest
 ```
 
-Ingestion rebuilds the whole collection on each run. Re-run it after changing documents, `EMBED_MODEL`, or `chunk_strategy`, `chunk_size`, `chunk_overlap` or `embed_passage_prefix` in `config.yaml`; retrieval must use the same `EMBED_MODEL` that built the store.
+Ingestion rebuilds the whole collection on each run. Re-run it after changing documents, `EMBED_MODEL_ID` in `main.py`, or `chunk_strategy`, `chunk_size`, `chunk_overlap` or `embed_passage_prefix` in `config.yaml`; retrieval must use the same `EMBED_MODEL_ID` that built the store.
 
 ## Golden set format
 

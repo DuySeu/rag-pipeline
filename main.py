@@ -7,11 +7,18 @@ import logging
 import sys
 from pathlib import Path
 
-from core import CliError, load_settings, make_client, make_embedder, open_collection
+from core.config import load_settings
+from core.constants import model
+from core.errors import CliError
+from core.openrouter import make_client, make_embedder
+from core.store import open_collection
 
 # Exit code per answer kind; 5 to 8 belong to CliError
 RESULT_EXIT_CODES = {"answer": 0, "clarify": 3, "refuse": 4}
 LOG_FORMAT = "%(levelname)s %(message)s"
+# Edit these to try another model; changing EMBED_MODEL_ID means re-running `python main.py ingest`
+EMBED_MODEL_ID = model.NEMOTRON_3_EMBED_1B
+CHAT_MODEL_ID = model.GEMMA_4_31B_IT
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +31,7 @@ def run_ingest(args: argparse.Namespace) -> None:
     from ingestion.pipeline import build_chunks, ingest
 
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
-    settings = load_settings()
+    settings = load_settings(EMBED_MODEL_ID, CHAT_MODEL_ID)
 
     # Loader errors stop the run here with exit 1; API errors map to codes 5 to 8
     try:
@@ -47,7 +54,7 @@ def run_ingest(args: argparse.Namespace) -> None:
 def run_ask(args: argparse.Namespace) -> None:
     from retrieval.pipeline import ask
 
-    settings = load_settings()
+    settings = load_settings(EMBED_MODEL_ID, CHAT_MODEL_ID)
 
     # Expected API and config failures print a labelled line and exit with their own code
     try:
@@ -72,7 +79,7 @@ def run_eval_ingestion(args: argparse.Namespace) -> None:
     from evaluation.golden import load_golden
     from evaluation.ingestion_eval import REPORT_PATH, evaluate_ingestion
 
-    settings = load_settings()
+    settings = load_settings(EMBED_MODEL_ID, CHAT_MODEL_ID)
     golden_sources = [s for sample in load_golden() for s in sample.sources]
     report = evaluate_ingestion(args.docs, settings, open_collection(settings), golden_sources)
 
@@ -87,8 +94,9 @@ def run_eval_retrieval(args: argparse.Namespace) -> None:
     from evaluation.retrieval_eval import run
 
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+    settings = load_settings(EMBED_MODEL_ID, CHAT_MODEL_ID)
     try:
-        print(json.dumps(asyncio.run(run()), indent=2))
+        print(json.dumps(asyncio.run(run(settings)), indent=2))
     except CliError as exc:
         # Rows already written to the samples file stay for the next run to compare
         print(f"[ERROR {exc.kind.name}] {exc}", file=sys.stderr)

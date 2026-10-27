@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from core import Settings
+from core.config import Settings
 
 VOCABULARY = ("leave", "remote", "travel")
 

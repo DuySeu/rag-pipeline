@@ -16,13 +16,9 @@ from ragas.metrics.collections import (
     Faithfulness,
 )
 
-from core import (
-    load_settings,
-    make_async_client,
-    make_client,
-    make_embedder,
-    open_collection,
-)
+from core.config import Settings
+from core.openrouter import make_async_client, make_client, make_embedder
+from core.store import open_collection
 from evaluation.golden import load_golden
 from retrieval.pipeline import generate_answer, retrieve
 
@@ -59,8 +55,7 @@ def summarize(rows: Sequence[dict[str, Any]], top_k: int) -> dict[str, Any]:
 
 
 # Retrieve, answer and score every golden question, writing rows as they finish
-async def run() -> dict[str, Any]:
-    settings = load_settings()
+async def run(settings: Settings) -> dict[str, Any]:
     client = make_client(settings)
     async_client = make_async_client(settings)
     collection = open_collection(settings)

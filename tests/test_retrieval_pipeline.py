@@ -5,7 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from core import CliError, ErrorKind, open_collection
+from core.errors import CliError, ErrorKind
+from core.store import open_collection
 from ingestion.corpus import corpus_hash
 from ingestion.pipeline import build_chunks, ingest
 from retrieval.pipeline import (

@@ -8,7 +8,7 @@ from typing import Any
 
 from chromadb.api.models.Collection import Collection
 
-from core import Settings
+from core.config import Settings
 from ingestion.corpus import corpus_hash, load_documents
 from ingestion.pipeline import chunk_documents, collection_metadata
 

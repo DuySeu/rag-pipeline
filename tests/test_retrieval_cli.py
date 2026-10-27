@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import main as cli
-from core import CliError, ErrorKind
+from core.errors import CliError, ErrorKind
 from retrieval.pipeline import Answer
 
 
@@ -14,8 +14,7 @@ def run_cli(monkeypatch, result):
         return [], result
 
     monkeypatch.setattr("sys.argv", ["main.py", "ask", "q"])
-    for name in ("OPENROUTER_API_KEY", "EMBED_MODEL", "CHAT_MODEL"):
-        monkeypatch.setenv(name, "fake")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "fake")
     monkeypatch.setattr(cli, "make_client", lambda settings: None)
     monkeypatch.setattr(cli, "make_embedder", lambda *args: None)
     monkeypatch.setattr(cli, "open_collection", lambda settings: None)

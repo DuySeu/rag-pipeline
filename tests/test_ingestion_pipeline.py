@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from core import open_collection
+from core.store import open_collection
 from evaluation.ingestion_eval import evaluate_ingestion
 from ingestion.chunking import chunk_text
 from ingestion.corpus import corpus_hash
