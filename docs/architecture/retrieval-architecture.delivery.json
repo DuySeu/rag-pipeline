@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "e11f67f7-e8e5-47c8-b9b4-4334ef21d9b8",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/duyseu/Workspace/Lab/rag-pipeline/.archify/architecture-rag-flows-20261030-100705/retrieval.json",
+  "output": "/Users/duyseu/Workspace/Lab/rag-pipeline/docs/architecture/retrieval-architecture.html",
+  "specification": {
+    "sha256": "a4032a839779f624dd8480113bd0484c824e26cb654a1ac51f0c7960a208cee2",
+    "bytes": 5200
+  },
+  "artifact": {
+    "sha256": "83218621f012eefa2905b6b5a49c5dbbe94b480e50ab30aa06c3d0f135abe92d",
+    "bytes": 825911
+  }
+}

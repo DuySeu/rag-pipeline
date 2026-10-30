@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "b3d33e61-82db-4b26-8822-6888f36cc725",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/duyseu/Workspace/Lab/rag-pipeline/.archify/architecture-rag-flows-20261030-100705/ingestion.json",
+  "output": "/Users/duyseu/Workspace/Lab/rag-pipeline/docs/architecture/ingestion-architecture.html",
+  "specification": {
+    "sha256": "379f4f1cce1a0477d79b7b8fbd65091550587ac231ffc7e99beeba96a4e6807a",
+    "bytes": 5125
+  },
+  "artifact": {
+    "sha256": "222202c8fb758b46f49accddb234972b1d99768698193cded26157a7347c2e38",
+    "bytes": 826324
+  }
+}

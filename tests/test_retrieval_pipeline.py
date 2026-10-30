@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import retrieval.pipeline
 from core.errors import CliError, ErrorKind
 from core.store import open_collection
 from ingestion.corpus import corpus_hash
@@ -61,7 +62,20 @@ def test_retrieve_stops_when_store_is_empty(settings):
     assert caught.value.kind is ErrorKind.CONFIG
 
 
-@pytest.mark.parametrize("field", ["embed_model", "embed_query_prefix"])
+def test_retrieve_embeds_question_with_query_prefix(settings, docs_dir):
+    build_store(settings, docs_dir)
+    embedded = []
+
+    def embed(texts):
+        embedded.extend(texts)
+        return fake_embed(texts)
+
+    retrieve("remote days", open_collection(settings), embed, settings)
+
+    assert embedded == ["query: remote days"]
+
+
+@pytest.mark.parametrize("field", ["embed_model"])
 def test_retrieve_stops_before_embedding_when_store_settings_differ(settings, docs_dir, field):
     build_store(settings, docs_dir)
     embedded = []
@@ -94,8 +108,11 @@ def test_within_threshold_keeps_everything_without_a_threshold_and_filters_with_
     assert within_threshold(CHUNKS, 0.2) == CHUNKS[:2]
 
 
-def test_ask_refuses_without_calling_chat_when_no_chunk_is_close_enough(settings, docs_dir):
+def test_ask_refuses_without_calling_chat_when_no_chunk_is_close_enough(
+    settings, docs_dir, monkeypatch
+):
     build_store(settings, docs_dir)
+    monkeypatch.setattr(retrieval.pipeline, "MAX_DISTANCE", -1.0)
     calls = []
 
     chunks, answer = ask(
@@ -103,7 +120,7 @@ def test_ask_refuses_without_calling_chat_when_no_chunk_is_close_enough(settings
         open_collection(settings),
         fake_embed,
         chat_client("{}", calls=calls),
-        replace(settings, max_distance=-1.0),
+        settings,
     )
 
     assert (answer.kind, answer.text, answer.citations) == ("refuse", REFUSAL_ANSWER, [])

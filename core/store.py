@@ -29,16 +29,12 @@ def check_collection(collection: Collection, settings: Settings) -> None:
             ErrorKind.CONFIG,
             "Store has no embed_model metadata; re-run `python main.py ingest`",
         )
-    for key, current in (
-        ("embed_model", settings.embed_model),
-        ("embed_query_prefix", settings.embed_query_prefix),
-    ):
-        if metadata.get(key) != current:
-            raise CliError(
-                ErrorKind.CONFIG,
-                f"Store was built with {key}={metadata.get(key)!r} but the setting is "
-                f"{current!r}; re-run `python main.py ingest` or change the setting",
-            )
+    if metadata["embed_model"] != settings.embed_model:
+        raise CliError(
+            ErrorKind.CONFIG,
+            f"Store was built with embed_model={metadata['embed_model']!r} but the setting is "
+            f"{settings.embed_model!r}; re-run `python main.py ingest` or change the setting",
+        )
 
 
 # Drop the collection and return an empty one with the same name, recording metadata on it

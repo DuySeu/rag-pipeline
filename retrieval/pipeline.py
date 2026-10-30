@@ -19,6 +19,15 @@ REFUSAL_ANSWER = "Không tìm thấy thông tin trong tài liệu."
 CLARIFY_MARKER = "CLARIFY:"
 LOCATOR_KEYS = ("page", "sheet", "slide")
 CITATION_PATTERN = re.compile(r"\[(\d+)\]")
+# Nemotron Embed (EMBED_MODEL_ID in main.py) was trained with "query: " before questions; must pair
+# with PASSAGE_PREFIX in ingestion/pipeline.py. Models trained without prefixes (e.g. Cohere) take none:
+# drop both and re-ingest
+QUERY_PREFIX = "query: "
+# Drop retrieved chunks with a cosine distance above this; None keeps every chunk. Range 0 to 2
+# (1 - cosine similarity), but where relevant chunks fall depends on the embed model, prefixes and
+# chunk size, so re-measure on the golden set whenever EMBED_MODEL_ID changes
+# ponytail: no threshold, set one when eval shows answers built from irrelevant chunks
+MAX_DISTANCE: float | None = None
 
 ANSWER_SYSTEM_PROMPT = (
     "Answer the question using only the numbered context below. "
@@ -65,7 +74,7 @@ def retrieve(
     check_collection(collection, settings)
 
     result = collection.query(
-        query_embeddings=embed([question]),
+        query_embeddings=embed([QUERY_PREFIX + question]),
         n_results=settings.top_k,
         include=["documents", "metadatas", "distances"],
     )
@@ -170,7 +179,7 @@ def ask(
     chunks = retrieve(question, collection, embed, settings)
     retrieve_ms = round((time.perf_counter() - started) * 1000)
 
-    kept = within_threshold(chunks, settings.max_distance)
+    kept = within_threshold(chunks, MAX_DISTANCE)
     if not kept:
         return chunks, Answer("refuse", REFUSAL_ANSWER, latency_ms={"retrieve": retrieve_ms})
 

@@ -12,6 +12,10 @@ from ingestion.corpus import load_documents
 from ingestion.loaders import Section
 
 CHROMA_ADD_BATCH_SIZE = 1000
+# Nemotron Embed (EMBED_MODEL_ID in main.py) was trained with "query: " before questions and
+# "passage: " before documents; without them retrieval degrades silently. Models trained without
+# prefixes (e.g. Cohere) take none: drop this one and QUERY_PREFIX in retrieval/pipeline.py, then re-ingest
+PASSAGE_PREFIX = "passage: "
 
 
 @dataclass(frozen=True)
@@ -56,8 +60,7 @@ def collection_metadata(settings: Settings, corpus_hash: str) -> dict[str, str |
         "chunk_size": settings.chunk_size,
         "chunk_overlap": settings.chunk_overlap,
         "chunk_strategy": f"{settings.chunk_strategy}-v{CHUNKING_VERSION}",
-        "embed_query_prefix": settings.embed_query_prefix,
-        "embed_passage_prefix": settings.embed_passage_prefix,
+        "embed_passage_prefix": PASSAGE_PREFIX,
         "corpus_hash": corpus_hash,
     }
 
@@ -69,7 +72,7 @@ def ingest(chunks: Sequence[Chunk], settings: Settings, embed: Embedder, corpus_
 
     # Embed first so a failed API call leaves the previous index untouched
     # ponytail: full rebuild re-embeds every doc, add per-file hashing if the corpus grows
-    vectors = embed([c.text for c in chunks])
+    vectors = embed([PASSAGE_PREFIX + c.text for c in chunks])
     collection = recreate_collection(settings, collection_metadata(settings, corpus_hash))
 
     for start in range(0, len(chunks), CHROMA_ADD_BATCH_SIZE):

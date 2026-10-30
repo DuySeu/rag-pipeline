@@ -7,7 +7,6 @@ from pathlib import Path
 import yaml
 
 from core.constants import (
-    BLANK_STRING_KEYS,
     CONFIG_DEFAULTS,
     CONFIG_PATH,
     REQUIRED_ENV,
@@ -26,9 +25,6 @@ class Settings:
     chunk_size: int
     chunk_overlap: int
     top_k: int
-    embed_query_prefix: str
-    embed_passage_prefix: str
-    max_distance: float | None
 
 
 # Read the key from the environment and the rest from the YAML config; main.py picks the models
@@ -59,8 +55,7 @@ def load_settings(embed_model: str, chat_model: str, config_path: Path = CONFIG_
     # A key left empty (`key:`, null or a blank string) takes its default
     config = {
         key: CONFIG_DEFAULTS[key]
-        if value is None
-        or (isinstance(value, str) and not value.strip() and key not in BLANK_STRING_KEYS)
+        if value is None or (isinstance(value, str) and not value.strip())
         else value
         for key, value in config.items()
     }
@@ -75,9 +70,6 @@ def load_settings(embed_model: str, chat_model: str, config_path: Path = CONFIG_
         chunk_size=int(config["chunk_size"]),
         chunk_overlap=int(config["chunk_overlap"]),
         top_k=int(config["top_k"]),
-        embed_query_prefix=str(config["embed_query_prefix"]),
-        embed_passage_prefix=str(config["embed_passage_prefix"]),
-        max_distance=None if config["max_distance"] is None else float(config["max_distance"]),
     )
 
     # Reject a window that would never advance

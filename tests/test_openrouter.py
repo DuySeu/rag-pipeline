@@ -39,7 +39,7 @@ def key_info(monkeypatch, daily):
     monkeypatch.setattr(core.openrouter.httpx, "get", lambda *a, **k: response)
 
 
-def test_embedder_prepends_prefix_to_every_text():
+def test_embedder_sends_texts_unchanged():
     sent = []
 
     def create(model, input):
@@ -50,9 +50,9 @@ def test_embedder_prepends_prefix_to_every_text():
 
     client = SimpleNamespace(embeddings=SimpleNamespace(create=create))
 
-    make_embedder(client, "m", "passage: ")(["a", "b"])
+    make_embedder(client, "m")(["a", "b"])
 
-    assert sent == [["passage: a", "passage: b"]]
+    assert sent == [["a", "b"]]
 
 
 @pytest.mark.parametrize(

@@ -94,11 +94,24 @@ def test_ingest_writes_locator_metadata_and_all_collection_config_keys(settings,
         "chunk_size",
         "chunk_overlap",
         "chunk_strategy",
-        "embed_query_prefix",
         "embed_passage_prefix",
         "corpus_hash",
     }
     assert collection.get()["metadatas"] == [{"source": "a.md", "index": 0}]
+
+
+def test_ingest_embeds_with_passage_prefix_but_stores_plain_text(settings, tmp_path):
+    (tmp_path / "a.md").write_text("leave policy", encoding="utf-8")
+    embedded = []
+
+    def embed(texts):
+        embedded.extend(texts)
+        return fake_embed(texts)
+
+    ingest(build_chunks(tmp_path, 40, 10), settings, embed, corpus_hash(tmp_path))
+
+    assert embedded == ["passage: leave policy"]
+    assert open_collection(settings).get()["documents"] == ["leave policy"]
 
 
 def test_ingestion_eval_fails_on_chunk_size_mismatch_and_on_edited_file(settings, docs_dir):

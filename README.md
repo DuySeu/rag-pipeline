@@ -9,7 +9,7 @@ Two pipelines that run on their own and share only the Chroma store on disk (`da
 | `data/docs/` | Input documents (`.md`, `.txt`) |
 | `ingestion/` | Load, chunk, embed, write to Chroma |
 | `retrieval/` | Embed the question, query Chroma, answer with the chat model |
-| `config.yaml` | Non-secret settings: store path, chunking, `top_k`, `max_distance`, embed prefixes |
+| `config.yaml` | Non-secret settings: store path, chunking, `top_k` |
 | `core/` | `constants.py` (model ids, defaults), `config.py` (settings), `errors.py`, `openrouter.py` (client, embedder), `store.py` (Chroma collection) |
 | `main.py` | One entry point: `python main.py {ingest,ask,eval-ingestion,eval-retrieval} [args...]` |
 | `evaluation/datasets/golden.jsonl` | Golden questions with reference answer and source file |
@@ -29,7 +29,7 @@ uv run --env-file .env python main.py eval-retrieval
 uv run pytest
 ```
 
-Ingestion rebuilds the whole collection on each run. Re-run it after changing documents, `EMBED_MODEL_ID` in `main.py`, or `chunk_strategy`, `chunk_size`, `chunk_overlap` or `embed_passage_prefix` in `config.yaml`; retrieval must use the same `EMBED_MODEL_ID` that built the store.
+Ingestion rebuilds the whole collection on each run. Re-run it after changing documents, `EMBED_MODEL_ID` in `main.py`, `chunk_strategy`, `chunk_size` or `chunk_overlap` in `config.yaml`, or the embed prefixes (`PASSAGE_PREFIX` in `ingestion/pipeline.py`, `QUERY_PREFIX` in `retrieval/pipeline.py`); retrieval must use the same `EMBED_MODEL_ID` that built the store.
 
 ## Golden set format
 

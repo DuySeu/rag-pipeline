@@ -16,12 +16,7 @@ CONFIG_DEFAULTS: dict[str, str | int | None] = {
     "chunk_size": 800,
     "chunk_overlap": 100,
     "top_k": 4,
-    "max_distance": None,
-    "embed_query_prefix": "query: ",
-    "embed_passage_prefix": "passage: ",
 }
-# Keys where "" is a real value (embed without a prefix) rather than an empty one
-BLANK_STRING_KEYS = frozenset({"embed_query_prefix", "embed_passage_prefix"})
 # Secrets; these have no default and must be set, normally through .env
 REQUIRED_ENV = ("OPENROUTER_API_KEY",)
 

@@ -59,7 +59,7 @@ async def run(settings: Settings) -> dict[str, Any]:
     client = make_client(settings)
     async_client = make_async_client(settings)
     collection = open_collection(settings)
-    embed = make_embedder(client, settings.embed_model, settings.embed_query_prefix)
+    embed = make_embedder(client, settings.embed_model)
 
     # The judge uses the same OpenRouter models as the pipeline
     judge = llm_factory(settings.chat_model, provider="openai", client=async_client)

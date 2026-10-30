@@ -1,20 +1,13 @@
 # Non-secret settings. The API key stays in .env, where an empty value stops the run; models are EMBED_MODEL_ID and CHAT_MODEL_ID in main.py.
 # A key left empty here (`key:`) uses its default from CONFIG_DEFAULTS in core/constants.py.
-# Changing chunk_strategy, chunk_size, chunk_overlap or embed_passage_prefix means re-running `python main.py ingest`.
+# Changing chunk_strategy, chunk_size or chunk_overlap means re-running `python main.py ingest`.
 
 chroma_dir: data/chroma
 collection: docs
 
 # Chunking (ingestion/chunking.py); Excel rows are always packed whole, whatever the strategy
-chunk_strategy: fixed  # fixed | recursive | heading
+chunk_strategy: recursive # fixed | recursive | heading
 chunk_size: 800
 chunk_overlap: 100
 
 top_k: 4
-# Drop retrieved chunks with a cosine distance above this; null keeps every chunk
-max_distance: null
-
-# Nemotron 3 Embed needs these prefixes; set them from the model card when EMBED_MODEL_ID changes.
-# "" means no prefix and is kept as is.
-embed_query_prefix: "query: "
-embed_passage_prefix: "passage: "

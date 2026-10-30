@@ -76,12 +76,12 @@ def classify_api_error(client: OpenAI, exc: openai.APIError) -> CliError:
     return CliError(ErrorKind.RATE_LIMIT, f"{detail}. Retry in a few minutes")
 
 
-# Return a function that embeds texts in batches with one model, prepending prefix to each text
-def make_embedder(client: OpenAI, model: str, prefix: str = "") -> Embedder:
+# Return a function that embeds texts in batches with one model
+def make_embedder(client: OpenAI, model: str) -> Embedder:
     def embed(texts: Sequence[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         for start in range(0, len(texts), EMBED_BATCH_SIZE):
-            batch = [prefix + text for text in texts[start : start + EMBED_BATCH_SIZE]]
+            batch = list(texts[start : start + EMBED_BATCH_SIZE])
             try:
                 response = client.embeddings.create(model=model, input=batch)
             except openai.APIError as exc:

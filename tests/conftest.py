@@ -27,9 +27,6 @@ def settings(tmp_path: Path) -> Settings:
         chunk_size=40,
         chunk_overlap=10,
         top_k=2,
-        embed_query_prefix="query: ",
-        embed_passage_prefix="passage: ",
-        max_distance=None,
     )
 
 

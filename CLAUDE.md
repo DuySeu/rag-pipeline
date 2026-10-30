@@ -15,7 +15,7 @@ uv run --env-file .env python main.py eval-retrieval        # hit_rate@k, MRR, R
 
 ## Gotchas
 
-- Đổi `EMBED_MODEL_ID` (`main.py`), `chunk_strategy`, `chunk_size`, `chunk_overlap`, `embed_passage_prefix` hoặc file trong `data/docs/` thì phải chạy lại ingestion. Retrieval phải dùng đúng `EMBED_MODEL_ID` đã build store.
+- Đổi `EMBED_MODEL_ID` (`main.py`), `chunk_strategy`, `chunk_size`, `chunk_overlap`, `PASSAGE_PREFIX`/`QUERY_PREFIX` hoặc file trong `data/docs/` thì phải chạy lại ingestion. Hai prefix hardcode theo model card của Nemotron Embed; đổi sang model không dùng prefix (vd Cohere) thì xoá cả hai. Retrieval phải dùng đúng `EMBED_MODEL_ID` đã build store.
 - Ingestion embed xong mới drop collection, nên API lỗi thì index cũ vẫn còn. Giữ nguyên thứ tự này.
 - Chunk id có dạng `<path relative to data/docs>#<index>`. `sources` trong golden set dùng cùng kiểu path, và ingestion_eval so khớp theo đó.
 - `retrieval_eval` chạy từng sample một để không vượt rate limit free tier, và ghi từng dòng vào `evaluation/reports/retrieval_samples.jsonl` ngay khi xong. Judge RAGAS dùng chính `CHAT_MODEL_ID`.

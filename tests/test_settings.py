@@ -15,9 +15,6 @@ chunk_strategy: heading
 chunk_size: 500
 chunk_overlap: 50
 top_k: 3
-max_distance: 0.6
-embed_query_prefix: "query: "
-embed_passage_prefix: "passage: "
 """
 
 
@@ -39,14 +36,6 @@ def test_load_settings_reads_config_file_key_from_env_and_models_from_arguments(
     assert settings.chroma_dir == Path("store")
     assert settings.chunk_strategy == "heading"
     assert (settings.chunk_size, settings.chunk_overlap, settings.top_k) == (500, 50, 3)
-    assert settings.max_distance == 0.6
-    assert settings.embed_query_prefix == "query: "
-
-
-def test_load_settings_reads_null_max_distance_as_no_filter(tmp_path):
-    config = CONFIG.replace("max_distance: 0.6", "max_distance: null")
-
-    assert load_settings("embed", "chat", write_config(tmp_path, config)).max_distance is None
 
 
 def test_load_settings_falls_back_to_defaults_for_empty_values(tmp_path):
@@ -63,17 +52,6 @@ def test_load_settings_falls_back_to_defaults_for_empty_values(tmp_path):
     assert settings.collection == CONFIG_DEFAULTS["collection"]
     assert settings.chunk_strategy == CONFIG_DEFAULTS["chunk_strategy"]
     assert settings.chroma_dir == Path(str(CONFIG_DEFAULTS["chroma_dir"]))
-
-
-def test_load_settings_keeps_a_blank_prefix_but_defaults_an_empty_one(tmp_path):
-    config = CONFIG.replace('embed_query_prefix: "query: "', 'embed_query_prefix: ""').replace(
-        'embed_passage_prefix: "passage: "', "embed_passage_prefix:"
-    )
-
-    settings = load_settings("embed", "chat", write_config(tmp_path, config))
-
-    assert settings.embed_query_prefix == ""
-    assert settings.embed_passage_prefix == CONFIG_DEFAULTS["embed_passage_prefix"]
 
 
 @pytest.mark.parametrize("value", ["", "   "])

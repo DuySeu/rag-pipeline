@@ -41,7 +41,7 @@ def run_ingest(args: argparse.Namespace) -> None:
         logger.info("Built %d chunks from %s", len(chunks), args.docs)
 
         client = make_client(settings)
-        embed = make_embedder(client, settings.embed_model, settings.embed_passage_prefix)
+        embed = make_embedder(client, settings.embed_model)
         stored = ingest(chunks, settings, embed, corpus_hash(args.docs))
     except CliError as exc:
         print(f"[ERROR {exc.kind.name}] {exc} (the previous index is unchanged)", file=sys.stderr)
@@ -59,7 +59,7 @@ def run_ask(args: argparse.Namespace) -> None:
     # Expected API and config failures print a labelled line and exit with their own code
     try:
         client = make_client(settings)
-        embed = make_embedder(client, settings.embed_model, settings.embed_query_prefix)
+        embed = make_embedder(client, settings.embed_model)
         _, answer = ask(args.question, open_collection(settings), embed, client, settings)
     except CliError as exc:
         print(f"[ERROR {exc.kind.name}] {exc}", file=sys.stderr)
