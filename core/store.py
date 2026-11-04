@@ -18,6 +18,14 @@ def open_collection(settings: Settings) -> Collection:
     )
 
 
+# Return the persisted collection if it exists, without creating one
+def find_collection(settings: Settings) -> Collection | None:
+    client = chromadb.PersistentClient(path=str(settings.chroma_dir))
+    if settings.collection not in [c.name for c in client.list_collections()]:
+        return None
+    return client.get_collection(settings.collection, embedding_function=None)
+
+
 # Stop before any embed call when the store is empty or was built with other embed settings
 def check_collection(collection: Collection, settings: Settings) -> None:
     if collection.count() == 0:
@@ -37,11 +45,19 @@ def check_collection(collection: Collection, settings: Settings) -> None:
         )
 
 
+# Drop the collection if it exists and report whether there was one to drop
+def delete_collection(settings: Settings) -> bool:
+    client = chromadb.PersistentClient(path=str(settings.chroma_dir))
+    if settings.collection not in [c.name for c in client.list_collections()]:
+        return False
+    client.delete_collection(settings.collection)
+    return True
+
+
 # Drop the collection and return an empty one with the same name, recording metadata on it
 def recreate_collection(settings: Settings, metadata: Mapping[str, str | int]) -> Collection:
+    delete_collection(settings)
     client = chromadb.PersistentClient(path=str(settings.chroma_dir))
-    if settings.collection in [c.name for c in client.list_collections()]:
-        client.delete_collection(settings.collection)
     return client.create_collection(
         settings.collection,
         embedding_function=None,

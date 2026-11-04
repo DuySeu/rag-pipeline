@@ -21,10 +21,13 @@ class Settings:
     chat_model: str
     chroma_dir: Path
     collection: str
+    docs_dir: Path
     chunk_strategy: str
     chunk_size: int
     chunk_overlap: int
     top_k: int
+    golden_path: Path
+    reports_dir: Path
 
 
 # Read the key from the environment and the rest from the YAML config; main.py picks the models
@@ -38,15 +41,22 @@ def load_settings(embed_model: str, chat_model: str, config_path: Path = CONFIG_
             f"{', '.join(empty)} is empty or not set; fill it in .env (see .env.example)",
         )
 
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+
+    # Flatten each pipeline section to `section.key` so one check covers sections and keys
+    if not isinstance(raw, dict) or not all(
+        isinstance(section, dict) for section in raw.values()
+    ):
+        raise TypeError(f"{config_path} must map each section to setting names and values")
+    found = {f"{name}.{key}": value for name, section in raw.items() for key, value in section.items()}
+    defaults = {
+        f"{name}.{key}": value
+        for name, section in CONFIG_DEFAULTS.items()
+        for key, value in section.items()
+    }
 
     # Reject a typo or a missing key instead of running with a silent default
-    if not isinstance(config, dict):
-        raise TypeError(f"{config_path} must map setting names to values")
-    missing, unknown = (
-        CONFIG_DEFAULTS.keys() - config.keys(),
-        config.keys() - CONFIG_DEFAULTS.keys(),
-    )
+    missing, unknown = defaults.keys() - found.keys(), found.keys() - defaults.keys()
     if missing or unknown:
         raise ValueError(
             f"{config_path}: missing keys {sorted(missing)}, unknown keys {sorted(unknown)}"
@@ -54,22 +64,25 @@ def load_settings(embed_model: str, chat_model: str, config_path: Path = CONFIG_
 
     # A key left empty (`key:`, null or a blank string) takes its default
     config = {
-        key: CONFIG_DEFAULTS[key]
+        key: defaults[key]
         if value is None or (isinstance(value, str) and not value.strip())
         else value
-        for key, value in config.items()
+        for key, value in found.items()
     }
 
     settings = Settings(
         api_key=env["OPENROUTER_API_KEY"],
         embed_model=embed_model,
         chat_model=chat_model,
-        chroma_dir=Path(config["chroma_dir"]),
-        collection=str(config["collection"]),
-        chunk_strategy=str(config["chunk_strategy"]),
-        chunk_size=int(config["chunk_size"]),
-        chunk_overlap=int(config["chunk_overlap"]),
-        top_k=int(config["top_k"]),
+        chroma_dir=Path(config["store.chroma_dir"]),
+        collection=str(config["store.collection"]),
+        docs_dir=Path(config["ingestion.docs_dir"]),
+        chunk_strategy=str(config["ingestion.chunk_strategy"]),
+        chunk_size=int(config["ingestion.chunk_size"]),
+        chunk_overlap=int(config["ingestion.chunk_overlap"]),
+        top_k=int(config["retrieval.top_k"]),
+        golden_path=Path(config["evaluation.golden_path"]),
+        reports_dir=Path(config["evaluation.reports_dir"]),
     )
 
     # Reject a window that would never advance

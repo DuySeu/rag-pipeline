@@ -8,14 +8,20 @@ MAX_RETRIES = 2
 KEY_INFO_TIMEOUT = 10.0
 COLLECTION_CONFIG = {"hnsw": {"space": "cosine"}}
 CONFIG_PATH = Path("config.yaml")
-# Settings read from CONFIG_PATH, with the value used when a key is left empty
-CONFIG_DEFAULTS: dict[str, str | int | None] = {
-    "chroma_dir": "data/chroma",
-    "collection": "docs",
-    "chunk_strategy": "fixed",
-    "chunk_size": 800,
-    "chunk_overlap": 100,
-    "top_k": 4,
+# Settings read from CONFIG_PATH by section, with the value used when a key is left empty
+CONFIG_DEFAULTS: dict[str, dict[str, str | int]] = {
+    "store": {"chroma_dir": "data/chroma", "collection": "docs"},
+    "ingestion": {
+        "docs_dir": "data/docs",
+        "chunk_strategy": "fixed",
+        "chunk_size": 800,
+        "chunk_overlap": 100,
+    },
+    "retrieval": {"top_k": 4},
+    "evaluation": {
+        "golden_path": "evaluation/datasets/golden.jsonl",
+        "reports_dir": "evaluation/reports",
+    },
 }
 # Secrets; these have no default and must be set, normally through .env
 REQUIRED_ENV = ("OPENROUTER_API_KEY",)

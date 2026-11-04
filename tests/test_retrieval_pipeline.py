@@ -8,8 +8,7 @@ import pytest
 import retrieval.pipeline
 from core.errors import CliError, ErrorKind
 from core.store import open_collection
-from ingestion.corpus import corpus_hash
-from ingestion.pipeline import build_chunks, ingest
+from ingestion.pipeline import ingest
 from retrieval.pipeline import (
     REFUSAL_ANSWER,
     RetrievedChunk,
@@ -23,7 +22,7 @@ from tests.conftest import fake_embed
 
 
 def build_store(settings, docs_dir):
-    ingest(build_chunks(docs_dir, 40, 10), settings, fake_embed, corpus_hash(docs_dir))
+    ingest(docs_dir, settings, fake_embed)
 
 
 def chat_client(content, usage=True, calls=None):

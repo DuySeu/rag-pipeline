@@ -6,16 +6,16 @@ Two pipelines that run on their own and share only the Chroma store on disk (`da
 
 | Path | What it holds |
 | --- | --- |
-| `data/docs/` | Input documents (`.md`, `.txt`) |
+| `data/docs/` | Input documents (`.md`, `.txt`); set by `ingestion.docs_dir`, overridden by `--docs` |
 | `ingestion/` | Load, chunk, embed, write to Chroma |
 | `retrieval/` | Embed the question, query Chroma, answer with the chat model |
-| `config.yaml` | Non-secret settings: store path, chunking, `top_k` |
+| `config.yaml` | Non-secret settings, one section per pipeline: `store` (shared Chroma path and collection), `ingestion` (docs folder, chunking), `retrieval` (`top_k`), `evaluation` (golden set path, reports folder) |
 | `core/` | `constants.py` (model ids, defaults), `config.py` (settings), `errors.py`, `openrouter.py` (client, embedder), `store.py` (Chroma collection) |
-| `main.py` | One entry point: `python main.py {ingest,ask,eval-ingestion,eval-retrieval} [args...]` |
-| `evaluation/datasets/golden.jsonl` | Golden questions with reference answer and source file |
+| `main.py` | One entry point: `python main.py {ingest,delete-collection,ask,eval-ingestion,eval-retrieval} [args...]` |
+| `evaluation/datasets/golden.jsonl` | Golden questions with reference answer and source file; set by `evaluation.golden_path` |
 | `evaluation/ingestion_eval.py` | Checks the store against the docs folder, no API calls |
 | `evaluation/retrieval_eval.py` | hit rate@k, MRR and RAGAS metrics over the golden set |
-| `evaluation/reports/` | Reports written by the two evals |
+| `evaluation/reports/` | Reports written by the two evals; set by `evaluation.reports_dir` |
 
 ## Run
 
@@ -23,17 +23,18 @@ Two pipelines that run on their own and share only the Chroma store on disk (`da
 cp .env.example .env   # then fill in OPENROUTER_API_KEY; other settings live in config.yaml
 uv venv && source .venv/bin/activate && uv pip install -r requirements.txt
 uv run --env-file .env python main.py ingest
+uv run --env-file .env python main.py delete-collection   # drop the store; ingest builds it again
 uv run --env-file .env python main.py ask "Mỗi tuần được làm việc từ xa tối đa mấy ngày?"
 uv run --env-file .env python main.py eval-ingestion
 uv run --env-file .env python main.py eval-retrieval
 uv run pytest
 ```
 
-Ingestion rebuilds the whole collection on each run. Re-run it after changing documents, `EMBED_MODEL_ID` in `main.py`, `chunk_strategy`, `chunk_size` or `chunk_overlap` in `config.yaml`, or the embed prefixes (`PASSAGE_PREFIX` in `ingestion/pipeline.py`, `QUERY_PREFIX` in `retrieval/pipeline.py`); retrieval must use the same `EMBED_MODEL_ID` that built the store.
+Ingestion is incremental: it hashes each file and embeds only new or edited files, and drops the chunks of files removed from the docs folder; with nothing changed it makes no API call. It rebuilds the whole collection when the store was built with other settings. Re-run it after changing documents, `EMBED_MODEL_ID` in `main.py`, `chunk_strategy`, `chunk_size` or `chunk_overlap` in the `ingestion` section of `config.yaml`, or the embed prefixes (`PASSAGE_PREFIX` in `ingestion/pipeline.py`, `QUERY_PREFIX` in `retrieval/pipeline.py`); retrieval must use the same `EMBED_MODEL_ID` that built the store.
 
 ## Golden set format
 
-One JSON object per line. `sources` lists file paths relative to `data/docs/` that contain the answer.
+One JSON object per line. `sources` lists file paths relative to the docs folder (`ingestion.docs_dir`) that contain the answer.
 
 ```json
 {"question": "...", "reference": "...", "sources": ["nghi-phep.md"]}

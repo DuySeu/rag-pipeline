@@ -23,10 +23,13 @@ def settings(tmp_path: Path) -> Settings:
         chat_model="fake",
         chroma_dir=tmp_path / "chroma",
         collection="docs",
+        docs_dir=tmp_path / "docs",
         chunk_strategy="fixed",
         chunk_size=40,
         chunk_overlap=10,
         top_k=2,
+        golden_path=tmp_path / "golden.jsonl",
+        reports_dir=tmp_path / "reports",
     )
 
 

@@ -12,7 +12,7 @@ from core.config import Settings
 from ingestion.corpus import corpus_hash, load_documents
 from ingestion.pipeline import chunk_documents, collection_metadata
 
-REPORT_PATH = Path("evaluation/reports/ingestion.json")
+REPORT_NAME = "ingestion.json"
 
 
 # Compare the vector store against a fresh chunking of the docs folder

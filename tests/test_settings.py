@@ -9,12 +9,19 @@ from core.constants import CONFIG_DEFAULTS, CONFIG_PATH
 from core.errors import CliError, ErrorKind
 
 CONFIG = """
-chroma_dir: store
-collection: docs
-chunk_strategy: heading
-chunk_size: 500
-chunk_overlap: 50
-top_k: 3
+store:
+  chroma_dir: store
+  collection: docs
+ingestion:
+  docs_dir: corpus
+  chunk_strategy: heading
+  chunk_size: 500
+  chunk_overlap: 50
+retrieval:
+  top_k: 3
+evaluation:
+  golden_path: golden.jsonl
+  reports_dir: reports
 """
 
 
@@ -34,6 +41,8 @@ def test_load_settings_reads_config_file_key_from_env_and_models_from_arguments(
 
     assert (settings.api_key, settings.embed_model, settings.chat_model) == ("k", "embed", "chat")
     assert settings.chroma_dir == Path("store")
+    assert settings.docs_dir == Path("corpus")
+    assert (settings.golden_path, settings.reports_dir) == (Path("golden.jsonl"), Path("reports"))
     assert settings.chunk_strategy == "heading"
     assert (settings.chunk_size, settings.chunk_overlap, settings.top_k) == (500, 50, 3)
 
@@ -48,10 +57,10 @@ def test_load_settings_falls_back_to_defaults_for_empty_values(tmp_path):
 
     settings = load_settings("embed", "chat", write_config(tmp_path, config))
 
-    assert settings.top_k == CONFIG_DEFAULTS["top_k"]
-    assert settings.collection == CONFIG_DEFAULTS["collection"]
-    assert settings.chunk_strategy == CONFIG_DEFAULTS["chunk_strategy"]
-    assert settings.chroma_dir == Path(str(CONFIG_DEFAULTS["chroma_dir"]))
+    assert settings.top_k == CONFIG_DEFAULTS["retrieval"]["top_k"]
+    assert settings.collection == CONFIG_DEFAULTS["store"]["collection"]
+    assert settings.chunk_strategy == CONFIG_DEFAULTS["ingestion"]["chunk_strategy"]
+    assert settings.chroma_dir == Path(str(CONFIG_DEFAULTS["store"]["chroma_dir"]))
 
 
 @pytest.mark.parametrize("value", ["", "   "])
@@ -67,13 +76,27 @@ def test_load_settings_stops_with_config_error_when_api_key_is_empty(tmp_path, m
 def test_load_settings_rejects_missing_and_unknown_keys(tmp_path):
     config = CONFIG.replace("top_k: 3", "topk: 3")
 
-    with pytest.raises(ValueError, match=r"missing keys \['top_k'\], unknown keys \['topk'\]"):
+    with pytest.raises(ValueError, match=r"missing keys \['retrieval.top_k'\], unknown keys \['retrieval.topk'\]"):
         load_settings("embed", "chat", write_config(tmp_path, config))
 
 
 def test_load_settings_rejects_a_file_that_is_not_a_mapping(tmp_path):
-    with pytest.raises(TypeError, match="must map setting names to values"):
+    with pytest.raises(TypeError, match="must map each section"):
         load_settings("embed", "chat", write_config(tmp_path, "- chunk_size\n"))
+
+
+def test_load_settings_rejects_a_flat_key_outside_any_section(tmp_path):
+    with pytest.raises(TypeError, match="must map each section"):
+        load_settings("embed", "chat", write_config(tmp_path, CONFIG + "top_k: 3\n"))
+
+
+def test_load_settings_rejects_a_key_in_the_wrong_section(tmp_path):
+    config = CONFIG.replace("retrieval:\n  top_k: 3", "retrieval:\n  chunk_size: 3").replace(
+        "  chunk_size: 500\n", "  top_k: 500\n"
+    )
+
+    with pytest.raises(ValueError, match="missing keys"):
+        load_settings("embed", "chat", write_config(tmp_path, config))
 
 
 def test_load_settings_rejects_overlap_not_smaller_than_chunk_size(tmp_path):

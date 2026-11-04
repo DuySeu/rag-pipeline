@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from core.constants import CONFIG_DEFAULTS
 from evaluation.golden import load_golden
 from evaluation.retrieval_eval import first_hit_rank, summarize
 
@@ -32,5 +33,5 @@ def test_summarize_averages_hit_rate_mrr_and_metrics():
 
 def test_golden_set_sources_exist_in_docs_folder():
     docs = {p.name for p in Path("data/docs").iterdir()}
-    for sample in load_golden():
+    for sample in load_golden(Path(str(CONFIG_DEFAULTS["evaluation"]["golden_path"]))):
         assert set(sample.sources) <= docs, sample.question

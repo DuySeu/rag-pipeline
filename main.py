@@ -11,7 +11,7 @@ from core.config import load_settings
 from core.constants import model
 from core.errors import CliError
 from core.openrouter import make_client, make_embedder
-from core.store import open_collection
+from core.store import delete_collection, open_collection
 
 # Exit code per answer kind; 5 to 8 belong to CliError
 RESULT_EXIT_CODES = {"answer": 0, "clarify": 3, "refuse": 4}
@@ -27,27 +27,44 @@ logger = logging.getLogger(__name__)
 
 # Chunk and embed the docs folder into the vector store
 def run_ingest(args: argparse.Namespace) -> None:
-    from ingestion.corpus import corpus_hash
-    from ingestion.pipeline import build_chunks, ingest
+    from ingestion.pipeline import ingest
 
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     settings = load_settings(EMBED_MODEL_ID, CHAT_MODEL_ID)
+    docs_dir = args.docs or settings.docs_dir
 
     # Loader errors stop the run here with exit 1; API errors map to codes 5 to 8
     try:
-        chunks = build_chunks(
-            args.docs, settings.chunk_size, settings.chunk_overlap, settings.chunk_strategy
-        )
-        logger.info("Built %d chunks from %s", len(chunks), args.docs)
-
         client = make_client(settings)
         embed = make_embedder(client, settings.embed_model)
-        stored = ingest(chunks, settings, embed, corpus_hash(args.docs))
+        result = ingest(docs_dir, settings, embed)
     except CliError as exc:
         print(f"[ERROR {exc.kind.name}] {exc} (the previous index is unchanged)", file=sys.stderr)
         sys.exit(exc.kind.value)
 
-    logger.info("Stored %d chunks in %s/%s", stored, settings.chroma_dir, settings.collection)
+    plan = result.plan
+    if plan is None:
+        logger.info("Rebuilt store: embedded %d chunks", result.embedded_chunks)
+    elif result.embedded_chunks or plan.changed or plan.removed:
+        logger.info(
+            "new=%d changed=%d removed=%d unchanged=%d, embedded %d chunks",
+            len(plan.new), len(plan.changed), len(plan.removed), len(plan.unchanged),
+            result.embedded_chunks,
+        )
+    else:
+        logger.info("Store is up to date, nothing to embed")
+    if result.empty_files:
+        logger.warning("Files with no text to chunk: %s", ", ".join(result.empty_files))
+    logger.info(
+        "Stored %d chunks in %s/%s", result.stored_chunks, settings.chroma_dir, settings.collection
+    )
+
+
+# Drop the vector store collection; `ingest` builds it again
+def run_delete_collection(args: argparse.Namespace) -> None:
+    settings = load_settings(EMBED_MODEL_ID, CHAT_MODEL_ID)
+    target = f"collection {settings.collection} in {settings.chroma_dir}"
+    print(f"Deleted {target}" if delete_collection(settings) else f"No {target}, nothing deleted")
 
 
 # Answer one question from the vector store, printing a labelled first line
@@ -77,14 +94,15 @@ def run_ask(args: argparse.Namespace) -> None:
 # Run the ingestion check, write the report and exit non-zero on failure
 def run_eval_ingestion(args: argparse.Namespace) -> None:
     from evaluation.golden import load_golden
-    from evaluation.ingestion_eval import REPORT_PATH, evaluate_ingestion
+    from evaluation.ingestion_eval import REPORT_NAME, evaluate_ingestion
 
     settings = load_settings(EMBED_MODEL_ID, CHAT_MODEL_ID)
-    golden_sources = [s for sample in load_golden() for s in sample.sources]
-    report = evaluate_ingestion(args.docs, settings, open_collection(settings), golden_sources)
+    golden_sources = [s for sample in load_golden(settings.golden_path) for s in sample.sources]
+    report = evaluate_ingestion(args.docs or settings.docs_dir, settings, open_collection(settings), golden_sources)
 
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    report_path = settings.reports_dir / REPORT_NAME
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
     sys.exit(0 if report["passed"] else 1)
 
@@ -109,8 +127,13 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
 
     ingest_parser = commands.add_parser("ingest", help="Ingest documents into the vector store")
-    ingest_parser.add_argument("--docs", type=Path, default=Path("data/docs"))
+    ingest_parser.add_argument("--docs", type=Path, help="default: ingestion.docs_dir")
     ingest_parser.set_defaults(run=run_ingest)
+
+    delete_parser = commands.add_parser(
+        "delete-collection", help="Delete the vector store collection named in config.yaml"
+    )
+    delete_parser.set_defaults(run=run_delete_collection)
 
     ask_parser = commands.add_parser("ask", help="Ask a question against the vector store")
     ask_parser.add_argument("question")
@@ -119,7 +142,7 @@ def main() -> None:
     eval_ingestion_parser = commands.add_parser(
         "eval-ingestion", help="Check the vector store against the docs folder"
     )
-    eval_ingestion_parser.add_argument("--docs", type=Path, default=Path("data/docs"))
+    eval_ingestion_parser.add_argument("--docs", type=Path, help="default: ingestion.docs_dir")
     eval_ingestion_parser.set_defaults(run=run_eval_ingestion)
 
     eval_retrieval_parser = commands.add_parser(

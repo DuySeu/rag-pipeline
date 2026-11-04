@@ -1,13 +1,22 @@
 # Non-secret settings. The API key stays in .env, where an empty value stops the run; models are EMBED_MODEL_ID and CHAT_MODEL_ID in main.py.
 # A key left empty here (`key:`) uses its default from CONFIG_DEFAULTS in core/constants.py.
-# Changing chunk_strategy, chunk_size or chunk_overlap means re-running `python main.py ingest`.
 
-chroma_dir: data/chroma
-collection: docs
+# Vector store shared by all three pipelines: ingestion writes it, retrieval and evaluation read it
+store:
+  chroma_dir: data/chroma
+  collection: docs
 
-# Chunking (ingestion/chunking.py); Excel rows are always packed whole, whatever the strategy
-chunk_strategy: recursive # fixed | recursive | heading
-chunk_size: 800
-chunk_overlap: 100
+ingestion:
+  docs_dir: data/docs # default for `--docs` of ingest and eval-ingestion
+  # Chunking (ingestion/chunking.py); Excel rows are always packed whole, whatever the strategy.
+  # Changing any of these means re-running `python main.py ingest`.
+  chunk_strategy: recursive # fixed | recursive | heading
+  chunk_size: 800
+  chunk_overlap: 100
 
-top_k: 4
+retrieval:
+  top_k: 4
+
+evaluation:
+  golden_path: evaluation/datasets/golden.jsonl
+  reports_dir: evaluation/reports

@@ -11,8 +11,7 @@ import core.openrouter
 from core.errors import CliError, ErrorKind
 from core.openrouter import make_embedder
 from core.store import open_collection
-from ingestion.corpus import corpus_hash
-from ingestion.pipeline import build_chunks, ingest
+from ingestion.pipeline import ingest
 from main import main
 from tests.conftest import fake_embed
 
@@ -90,8 +89,10 @@ def test_embedder_reports_rate_limit_when_quota_lookup_fails(monkeypatch):
 def test_ingestion_exits_with_quota_code_and_keeps_old_index(
     monkeypatch, settings, docs_dir, capsys
 ):
-    ingest(build_chunks(docs_dir, 40, 10), settings, fake_embed, corpus_hash(docs_dir))
+    ingest(docs_dir, settings, fake_embed)
     before = open_collection(settings).get()["ids"]
+    # Edit a doc so the second run has something to embed and hits the quota error
+    (docs_dir / "leave.md").write_text("leave policy: ten leave days per year", encoding="utf-8")
     key_info(monkeypatch, {"used": 50, "limit": 50, "remaining": 0})
     monkeypatch.setattr("main.load_settings", lambda *args: replace(settings, api_key="k"))
     monkeypatch.setattr("sys.argv", ["main.py", "ingest", "--docs", str(docs_dir)])

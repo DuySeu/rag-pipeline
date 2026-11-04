@@ -4,7 +4,6 @@ import json
 import logging
 import statistics
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
 from ragas.embeddings.base import embedding_factory
@@ -22,8 +21,8 @@ from core.store import open_collection
 from evaluation.golden import load_golden
 from retrieval.pipeline import generate_answer, retrieve
 
-SAMPLES_PATH = Path("evaluation/reports/retrieval_samples.jsonl")
-SUMMARY_PATH = Path("evaluation/reports/retrieval_summary.json")
+SAMPLES_NAME = "retrieval_samples.jsonl"
+SUMMARY_NAME = "retrieval_summary.json"
 RAGAS_METRICS = ("faithfulness", "answer_relevancy", "context_precision", "context_recall")
 
 logger = logging.getLogger(__name__)
@@ -69,11 +68,12 @@ async def run(settings: Settings) -> dict[str, Any]:
     context_precision = ContextPrecisionWithReference(llm=judge)
     context_recall = ContextRecall(llm=judge)
 
-    SAMPLES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SAMPLES_PATH.write_text("", encoding="utf-8")
+    samples_path = settings.reports_dir / SAMPLES_NAME
+    samples_path.parent.mkdir(parents=True, exist_ok=True)
+    samples_path.write_text("", encoding="utf-8")
 
     rows: list[dict[str, Any]] = []
-    golden = load_golden()
+    golden = load_golden(settings.golden_path)
     # ponytail: samples run one at a time to stay under free-tier rate limits, gather() if paid
     for number, sample in enumerate(golden, start=1):
         logger.info("Scoring %d/%d: %s", number, len(golden), sample.question)
@@ -113,9 +113,9 @@ async def run(settings: Settings) -> dict[str, Any]:
         rows.append(row)
 
         # Append each row now so a rate-limit failure keeps the finished samples
-        with SAMPLES_PATH.open("a", encoding="utf-8") as samples_file:
+        with samples_path.open("a", encoding="utf-8") as samples_file:
             samples_file.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     summary = summarize(rows, settings.top_k)
-    SUMMARY_PATH.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    (settings.reports_dir / SUMMARY_NAME).write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary

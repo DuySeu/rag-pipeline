@@ -131,12 +131,12 @@ def test_load_documents_rejects_xls_and_corrupt_xlsx_naming_the_file(tmp_path):
 
 
 def test_load_error_leaves_existing_store_untouched(settings, docs_dir):
-    ingest(build_chunks(docs_dir, 40, 10), settings, fake_embed, corpus_hash(docs_dir))
+    ingest(docs_dir, settings, fake_embed)
     before = open_collection(settings).count()
     (docs_dir / "bad.xlsx").write_bytes(b"not a zip")
 
     with pytest.raises(LoadError):
-        build_chunks(docs_dir, 40, 10)
+        ingest(docs_dir, settings, fake_embed)
 
     assert open_collection(settings).count() == before
 
