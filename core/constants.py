@@ -6,6 +6,8 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 EMBED_BATCH_SIZE = 64
 MAX_RETRIES = 2
 KEY_INFO_TIMEOUT = 10.0
+# Seconds to wait for one OpenRouter call; the SDK default is 600
+REQUEST_TIMEOUT = 120.0
 COLLECTION_CONFIG = {"hnsw": {"space": "cosine"}}
 CONFIG_PATH = Path("config.yaml")
 # Settings read from CONFIG_PATH by section, with the value used when a key is left empty
@@ -94,22 +96,4 @@ class ModelId:
     # OPENROUTER-RERANK:END
 
 
-class Region:
-    AP_SOUTHEAST_1 = "ap-southeast-1"
-
-
-message = [
-    {
-        "content": "string",
-        "file": {
-            "base64": "string",
-            "fileName": "string",
-            "mediaType": "string",
-            "isText": "boolean",
-        },
-    }
-]
-
-
 model = ModelId()
-region = Region()

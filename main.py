@@ -25,6 +25,13 @@ logger = logging.getLogger(__name__)
 # Each command imports its pipeline inside the function so `ask` does not pay ~1 s for ragas
 
 
+# Reject a blank question before any API call
+def non_blank(value: str) -> str:
+    if not value.strip():
+        raise argparse.ArgumentTypeError("question must not be blank")
+    return value
+
+
 # Chunk and embed the docs folder into the vector store
 def run_ingest(args: argparse.Namespace) -> None:
     from ingestion.pipeline import ingest
@@ -136,7 +143,7 @@ def main() -> None:
     delete_parser.set_defaults(run=run_delete_collection)
 
     ask_parser = commands.add_parser("ask", help="Ask a question against the vector store")
-    ask_parser.add_argument("question")
+    ask_parser.add_argument("question", type=non_blank)
     ask_parser.set_defaults(run=run_ask)
 
     eval_ingestion_parser = commands.add_parser(

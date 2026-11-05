@@ -7,6 +7,7 @@ from collections.abc import Collection, Mapping
 from dataclasses import replace
 from pathlib import Path
 
+from core.errors import CliError, ErrorKind
 from ingestion.loaders import LOADERS, LoadError, Section
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,9 @@ LOCK_FILE_PREFIX = "~$"
 
 # List the files a loader exists for, sorted by path; Office lock files are not documents
 def list_documents(docs_dir: Path) -> list[Path]:
+    # A wrong path would otherwise look like an empty corpus
+    if not docs_dir.is_dir():
+        raise CliError(ErrorKind.CONFIG, f"Docs folder {docs_dir} does not exist or is not a folder")
     return sorted(
         p
         for p in docs_dir.rglob("*")

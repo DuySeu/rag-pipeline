@@ -1,6 +1,6 @@
 # Hướng dẫn tích hợp rag-pipeline vào app
 
-Tài liệu mô tả cách chuyển ingestion và retrieval của repo này sang một app chạy thật: chuyển những file nào, đổi nguồn tài liệu từ thư mục local sang S3 hoặc MinIO, lưu `file_hash` vào bảng database, và đổi vector store từ Chroma sang Qdrant.
+Tài liệu mô tả cách chuyển ingestion và retrieval của repo này sang một app chạy thật: chuyển những file nào, đổi nguồn tài liệu từ thư mục local sang S3 hoặc MinIO, lưu `file_hash` vào bảng database, đổi vector store từ Chroma sang Qdrant, và những phần chỉ app mới làm được (streaming, API, phân quyền, hội thoại, cache, log).
 
 Giả định: app viết bằng Python, có Postgres, và gọi được OpenRouter. Nếu app dùng ngôn ngữ khác thì phần "Chuyển những file nào" không áp dụng; logic cần port lại vẫn là các mục còn lại. Các đoạn code là phác thảo, chưa chạy với version thư viện cụ thể nào.
 
@@ -193,6 +193,34 @@ Với lần chạy tăng dần, giữa lúc xoá point cũ và upsert point mớ
 | `RATE_LIMIT` (6) | 429 theo phút | HTTP 503 kèm `Retry-After`; job retry có backoff |
 | `QUOTA` (7) | Hết quota ngày hoặc hết credit | HTTP 503; job dừng tới ngày UTC kế tiếp |
 | `API` (8) | Lỗi khác từ OpenRouter | HTTP 502; job retry giới hạn số lần |
+
+### Streaming câu trả lời
+
+`generate_answer` gọi chat với `response_format={"type": "json_object"}` rồi parse cả reply một lần (`retrieval/pipeline.py:136-149`), nên không stream text ra người dùng được. Khuyên đổi format reply sang text thuần có marker `[n]`, dòng đầu `CLARIFY:` khi hỏi lại; `parse_reply` đã có sẵn nhánh fallback này (`retrieval/pipeline.py:120-123`). Stream token ra client, xong thì parse citation từ toàn bộ text và lọc `1 <= n <= len(chunks)` như hiện tại. Chi phí: `kind` và citations chỉ biết ở event cuối, client phải đợi event đó mới hiện nguồn. Nhánh refuse (không chunk nào qua ngưỡng) trả ngay, không cần stream. Đổi format reply là đổi prompt, nên chạy `eval-retrieval` trước và sau.
+
+### Hợp đồng API
+
+Request: `question`, `conversation_id` (tuỳ chọn). Response: `kind`, `text`, `citations` dạng `[{source, locator}]`, `request_id`. `usage`, `latency_ms`, `invalid_citations` và distance của chunk ghi vào log, không trả cho client. Validate `question` ở endpoint: không rỗng sau `strip`, giới hạn độ dài (giới hạn token đầu vào của embed model: chưa kiểm).
+
+### Phân quyền và lọc theo metadata
+
+`retrieve` query toàn bộ collection, không có filter (`retrieval/pipeline.py:76-80`). Khi tài liệu có quyền truy cập khác nhau: ingestion ghi `tenant_id` hoặc nhóm quyền vào payload của từng point (lấy từ metadata object S3 hoặc từ bảng), retrieval luôn thêm filter theo user vào `query_points(query_filter=...)` để lọc trước khi tìm vector, không lọc sau top_k. Filter lấy từ session phía server, không lấy từ request. Tạo payload index cho field đó như với `source`. Thêm `user_context` vào golden set như `docs/benchmark.md` để đo access violation rate.
+
+### Hội thoại nhiều lượt
+
+`ask` nhận một câu hỏi độc lập. Câu hỏi nối tiếp ("còn năm sau thì sao?") cần một bước viết lại thành câu độc lập từ lịch sử trước khi embed: thêm một lần gọi chat model (latency và quota). Lịch sử chỉ đưa vào bước viết lại, không đưa vào prompt trả lời, để citation vẫn chỉ trỏ vào chunk. Câu trả lời `kind = "clarify"` là lượt hỏi lại trong hội thoại; câu người dùng trả lời đi qua bước viết lại cùng câu hỏi gốc.
+
+### Giới hạn tải và timeout
+
+Giới hạn theo phút và theo ngày của OpenRouter free tier tính theo key (`core/openrouter.py:55-76`). Dùng hai key riêng cho job ingest và endpoint để một lần rebuild không làm endpoint trả 503. Rate limit theo user ở gateway trước khi gọi `ask`. Truyền `timeout` khi tạo `OpenAI` client (`core/openrouter.py:28`) nhỏ hơn timeout của request HTTP; SDK mặc định chờ 600 s. Client ngắt kết nối thì huỷ lời gọi chat đang chạy.
+
+### Cache
+
+Cache câu trả lời theo khoá (câu hỏi đã chuẩn hoá NFC và `strip`, filter quyền, phiên bản store). Phiên bản store đổi sau mỗi lần ingest có thay đổi (`updated_at` trong `vector_store_config`), nên cache tự hết hạn khi tài liệu đổi. Không cache câu trả lời `refuse` lâu, vì tài liệu mới có thể trả lời được. Chi phí: thêm Redis hoặc bảng cache; khoá thiếu filter quyền thì lộ câu trả lời giữa các user.
+
+### Log, trace và feedback
+
+Mỗi request ghi một dòng log: `request_id`, câu hỏi (hoặc hash nếu chính sách dữ liệu không cho lưu), chunk id và distance của top_k, `kind`, latency từng bước, `usage`, `invalid_citations`. Gửi trace tới công cụ app đang dùng (LangSmith hoặc OpenTelemetry). Theo dõi hằng tuần: tỉ lệ `refuse` và `clarify`, distance trung bình của chunk top-1; distance tăng dần là dấu hiệu câu hỏi hoặc corpus đã lệch. Thu feedback đúng/sai từ người dùng; câu bị đánh sai đưa vào golden set sau khi có người viết `reference`.
 
 ## Cấu hình và secret
 

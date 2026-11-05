@@ -12,6 +12,7 @@ from core.constants import (
     KEY_INFO_TIMEOUT,
     MAX_RETRIES,
     OPENROUTER_BASE_URL,
+    REQUEST_TIMEOUT,
 )
 from core.errors import CliError, ErrorKind
 
@@ -25,7 +26,12 @@ def make_client(settings: Settings) -> OpenAI:
             ErrorKind.CONFIG,
             "OPENROUTER_API_KEY is not set (copy .env.example to .env)",
         )
-    return OpenAI(base_url=OPENROUTER_BASE_URL, api_key=settings.api_key, max_retries=MAX_RETRIES)
+    return OpenAI(
+        base_url=OPENROUTER_BASE_URL,
+        api_key=settings.api_key,
+        max_retries=MAX_RETRIES,
+        timeout=REQUEST_TIMEOUT,
+    )
 
 
 # Build an async OpenRouter client for RAGAS, which scores through async calls
@@ -36,7 +42,10 @@ def make_async_client(settings: Settings) -> AsyncOpenAI:
             "OPENROUTER_API_KEY is not set (copy .env.example to .env)",
         )
     return AsyncOpenAI(
-        base_url=OPENROUTER_BASE_URL, api_key=settings.api_key, max_retries=MAX_RETRIES
+        base_url=OPENROUTER_BASE_URL,
+        api_key=settings.api_key,
+        max_retries=MAX_RETRIES,
+        timeout=REQUEST_TIMEOUT,
     )
 
 
@@ -86,7 +95,18 @@ def make_embedder(client: OpenAI, model: str) -> Embedder:
                 response = client.embeddings.create(model=model, input=batch)
             except openai.APIError as exc:
                 raise classify_api_error(client, exc) from exc
-            vectors.extend(item.embedding for item in sorted(response.data, key=lambda d: d.index))
+            # A short reply would pair the remaining vectors with the wrong chunks
+            got = [item.embedding for item in sorted(response.data or [], key=lambda d: d.index)]
+            if len(got) != len(batch):
+                raise CliError(
+                    ErrorKind.API, f"{model} returned {len(got)} vectors for {len(batch)} texts"
+                )
+            vectors.extend(got)
+
+        # Vectors of different sizes cannot share one index
+        sizes = {len(v) for v in vectors}
+        if len(sizes) > 1 or 0 in sizes:
+            raise CliError(ErrorKind.API, f"{model} returned vectors of sizes {sorted(sizes)}")
         return vectors
 
     return embed

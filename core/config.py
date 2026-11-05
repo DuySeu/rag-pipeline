@@ -41,13 +41,18 @@ def load_settings(embed_model: str, chat_model: str, config_path: Path = CONFIG_
             f"{', '.join(empty)} is empty or not set; fill it in .env (see .env.example)",
         )
 
-    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    try:
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise CliError(ErrorKind.CONFIG, f"Cannot read {config_path} ({exc})") from exc
 
     # Flatten each pipeline section to `section.key` so one check covers sections and keys
     if not isinstance(raw, dict) or not all(
         isinstance(section, dict) for section in raw.values()
     ):
-        raise TypeError(f"{config_path} must map each section to setting names and values")
+        raise CliError(
+            ErrorKind.CONFIG, f"{config_path} must map each section to setting names and values"
+        )
     found = {f"{name}.{key}": value for name, section in raw.items() for key, value in section.items()}
     defaults = {
         f"{name}.{key}": value
@@ -58,8 +63,9 @@ def load_settings(embed_model: str, chat_model: str, config_path: Path = CONFIG_
     # Reject a typo or a missing key instead of running with a silent default
     missing, unknown = defaults.keys() - found.keys(), found.keys() - defaults.keys()
     if missing or unknown:
-        raise ValueError(
-            f"{config_path}: missing keys {sorted(missing)}, unknown keys {sorted(unknown)}"
+        raise CliError(
+            ErrorKind.CONFIG,
+            f"{config_path}: missing keys {sorted(missing)}, unknown keys {sorted(unknown)}",
         )
 
     # A key left empty (`key:`, null or a blank string) takes its default
@@ -70,23 +76,32 @@ def load_settings(embed_model: str, chat_model: str, config_path: Path = CONFIG_
         for key, value in found.items()
     }
 
-    settings = Settings(
-        api_key=env["OPENROUTER_API_KEY"],
-        embed_model=embed_model,
-        chat_model=chat_model,
-        chroma_dir=Path(config["store.chroma_dir"]),
-        collection=str(config["store.collection"]),
-        docs_dir=Path(config["ingestion.docs_dir"]),
-        chunk_strategy=str(config["ingestion.chunk_strategy"]),
-        chunk_size=int(config["ingestion.chunk_size"]),
-        chunk_overlap=int(config["ingestion.chunk_overlap"]),
-        top_k=int(config["retrieval.top_k"]),
-        golden_path=Path(config["evaluation.golden_path"]),
-        reports_dir=Path(config["evaluation.reports_dir"]),
-    )
+    # A number written as text that int() cannot read is a config error too
+    try:
+        settings = Settings(
+            api_key=env["OPENROUTER_API_KEY"],
+            embed_model=embed_model,
+            chat_model=chat_model,
+            chroma_dir=Path(config["store.chroma_dir"]),
+            collection=str(config["store.collection"]),
+            docs_dir=Path(config["ingestion.docs_dir"]),
+            chunk_strategy=str(config["ingestion.chunk_strategy"]),
+            chunk_size=int(config["ingestion.chunk_size"]),
+            chunk_overlap=int(config["ingestion.chunk_overlap"]),
+            top_k=int(config["retrieval.top_k"]),
+            golden_path=Path(config["evaluation.golden_path"]),
+            reports_dir=Path(config["evaluation.reports_dir"]),
+        )
+    except (TypeError, ValueError) as exc:
+        raise CliError(ErrorKind.CONFIG, f"{config_path}: {exc}") from exc
 
-    # Reject a window that would never advance
+    # Reject a window that would never advance and a query that asks for nothing
     if not 0 <= settings.chunk_overlap < settings.chunk_size:
-        raise ValueError("chunk_overlap must be >= 0 and smaller than chunk_size")
+        raise CliError(
+            ErrorKind.CONFIG,
+            f"{config_path}: chunk_overlap must be >= 0 and smaller than chunk_size",
+        )
+    if settings.top_k < 1:
+        raise CliError(ErrorKind.CONFIG, f"{config_path}: top_k must be at least 1")
 
     return settings

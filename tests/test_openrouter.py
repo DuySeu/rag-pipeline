@@ -54,6 +54,40 @@ def test_embedder_sends_texts_unchanged():
     assert sent == [["a", "b"]]
 
 
+def embedding_client(*replies):
+    batches = iter(replies)
+
+    def create(model, input):
+        return SimpleNamespace(
+            data=[SimpleNamespace(index=i, embedding=v) for i, v in enumerate(next(batches))]
+        )
+
+    return SimpleNamespace(embeddings=SimpleNamespace(create=create))
+
+
+def test_embedder_stops_with_api_error_when_reply_has_fewer_vectors_than_texts():
+    with pytest.raises(CliError, match="returned 1 vectors for 2 texts") as caught:
+        make_embedder(embedding_client([[0.1]]), "m")(["a", "b"])
+
+    assert caught.value.kind is ErrorKind.API
+
+
+def test_embedder_stops_with_api_error_when_batches_return_different_sizes(monkeypatch):
+    monkeypatch.setattr(core.openrouter, "EMBED_BATCH_SIZE", 1)
+
+    with pytest.raises(CliError, match=r"sizes \[1, 2\]") as caught:
+        make_embedder(embedding_client([[0.1]], [[0.1, 0.2]]), "m")(["a", "b"])
+
+    assert caught.value.kind is ErrorKind.API
+
+
+def test_embedder_stops_with_api_error_when_a_vector_is_empty():
+    with pytest.raises(CliError, match="sizes") as caught:
+        make_embedder(embedding_client([[]]), "m")(["a"])
+
+    assert caught.value.kind is ErrorKind.API
+
+
 @pytest.mark.parametrize(
     ("status", "daily", "kind"),
     [

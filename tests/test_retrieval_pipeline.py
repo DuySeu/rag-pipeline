@@ -25,12 +25,15 @@ def build_store(settings, docs_dir):
     ingest(docs_dir, settings, fake_embed)
 
 
-def chat_client(content, usage=True, calls=None):
+def chat_client(content, usage=True, calls=None, finish_reason="stop", choices=True):
     def create(**kwargs):
         if calls is not None:
             calls.append(kwargs)
+        choice = SimpleNamespace(
+            message=SimpleNamespace(content=content), finish_reason=finish_reason
+        )
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+            choices=[choice] if choices else [],
             usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5) if usage else None,
         )
 
@@ -165,6 +168,35 @@ def test_generate_answer_returns_no_usage_when_provider_omits_it():
     assert generate_answer("q", CHUNKS, chat_client("hi", usage=False), "m").usage is None
 
 
+def test_generate_answer_returns_refuse_without_citations_when_model_refuses():
+    reply = '{"type": "refuse", "text": "Không tìm thấy.", "citations": [2]}'
+
+    answer = generate_answer("q", CHUNKS, chat_client(reply), "m")
+
+    assert (answer.kind, answer.text, answer.citations) == ("refuse", "Không tìm thấy.", [])
+
+
+def test_answer_prompt_offers_refuse_and_treats_context_as_data():
+    assert '"refuse"' in retrieval.pipeline.ANSWER_SYSTEM_PROMPT
+    assert "not instructions" in retrieval.pipeline.ANSWER_SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize(
+    ("client", "message"),
+    [
+        (chat_client(None), "empty reply"),
+        (chat_client("  \n"), "empty reply"),
+        (chat_client("hi", choices=False), "empty reply"),
+        (chat_client('{"type": "answer", "te', finish_reason="length"), "cut off"),
+    ],
+)
+def test_generate_answer_stops_with_api_error_on_empty_or_truncated_reply(client, message):
+    with pytest.raises(CliError, match=message) as caught:
+        generate_answer("q", CHUNKS, client, "m")
+
+    assert caught.value.kind is ErrorKind.API
+
+
 @pytest.mark.parametrize(
     ("content", "expected"),
     [
@@ -173,6 +205,11 @@ def test_generate_answer_returns_no_usage_when_provider_omits_it():
             ("clarify", "Which one?", [1]),
         ),
         ('{"type": "weird", "text": "ok [2]"}', ("answer", "ok [2]", [2])),
+        (
+            '{"type": "refuse", "text": "Không có trong tài liệu [1].", "citations": [1]}',
+            ("refuse", "Không có trong tài liệu [1].", []),
+        ),
+        ('{"type": "refuse", "text": " "}', ("refuse", REFUSAL_ANSWER, [])),
         ('{"type": "clarify", "text": "  "}', ("answer", "  ", [])),
         ("CLARIFY: Which one? [1]", ("clarify", "Which one? [1]", [1])),
         ("plain answer [2] and [4]", ("answer", "plain answer [2] and [4]", [2, 4])),

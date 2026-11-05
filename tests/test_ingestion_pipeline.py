@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import pytest
 
+from core.errors import CliError, ErrorKind
 from core.store import delete_collection, open_collection
 from evaluation.ingestion_eval import evaluate_ingestion
 from ingestion.chunking import chunk_text
@@ -49,6 +50,13 @@ def test_ingest_rejects_empty_input_and_keeps_existing_store(settings, docs_dir,
         ingest(empty_dir, settings, fake_embed)
 
     assert open_collection(settings).count() > 0
+
+
+def test_ingest_stops_with_config_error_when_docs_folder_is_missing(settings, tmp_path):
+    with pytest.raises(CliError, match="does not exist") as caught:
+        ingest(tmp_path / "absent", settings, fake_embed)
+
+    assert caught.value.kind is ErrorKind.CONFIG
 
 
 def test_delete_collection_removes_an_ingested_store(settings, docs_dir):

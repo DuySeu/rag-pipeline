@@ -36,3 +36,9 @@ def test_main_exits_five_with_error_label_when_env_value_is_empty(monkeypatch, c
     assert run_main(monkeypatch, "eval-ingestion") == 5
 
     assert capsys.readouterr().err.startswith("[ERROR CONFIG] OPENROUTER_API_KEY is empty")
+
+
+def test_main_ask_exits_two_when_question_is_blank(monkeypatch, capsys):
+    assert run_main(monkeypatch, "ask", "   ") == 2
+
+    assert "question must not be blank" in capsys.readouterr().err
