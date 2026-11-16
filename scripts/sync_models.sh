@@ -11,7 +11,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 PYTHON="${PYTHON:-python3.13}"
-[[ -x .venv/bin/python ]] && PYTHON=.venv/bin/python
+[[ -x ../.venv/bin/python ]] && PYTHON=../.venv/bin/python
 
 "$PYTHON" - core/constants.py <<'PY'
 from __future__ import annotations

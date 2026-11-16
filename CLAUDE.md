@@ -4,14 +4,16 @@ Hai pipeline độc lập, chỉ chia sẻ Chroma store trên đĩa (`data/chrom
 
 ## Commands
 
+Dùng venv chung của Lab ở `../.venv` (Python 3.12, quản lý bằng uv). Không tạo `.venv` riêng trong repo: không `uv venv`, không chạy `uv sync`/`uv run` thiếu `UV_PROJECT_ENVIRONMENT=../.venv` (chúng sẽ tạo `./.venv`). Dependency nằm trong `pyproject.toml` + `uv.lock`; thêm bằng `uv add --no-sync <pkg>` (`--dev` cho tool dev) rồi sync. Giữ `--inexact` để không gỡ package của các repo Lab khác.
+
 ```sh
-uv venv && source .venv/bin/activate && uv pip install -r requirements.txt
-uv run pytest                                              # không gọi API, dùng fake_embed trong tests/conftest.py
-uv run --env-file .env python main.py ingest                # chỉ embed file mới/đã sửa, tự rebuild khi cấu hình lệch
-uv run --env-file .env python main.py delete-collection     # xoá collection, không hỏi lại
-uv run --env-file .env python main.py ask "<câu hỏi>"
-uv run --env-file .env python main.py eval-ingestion        # không gọi API, exit 1 nếu store lệch docs
-uv run --env-file .env python main.py eval-retrieval        # hit_rate@k, MRR, RAGAS; chậm, tốn quota
+UV_PROJECT_ENVIRONMENT=../.venv uv sync --inexact            # cài pyproject.toml + uv.lock vào ../.venv
+UV_PROJECT_ENVIRONMENT=../.venv uv run pytest                                              # không gọi API, dùng fake_embed trong tests/conftest.py
+UV_PROJECT_ENVIRONMENT=../.venv uv run --env-file .env python main.py ingest                # chỉ embed file mới/đã sửa, tự rebuild khi cấu hình lệch
+UV_PROJECT_ENVIRONMENT=../.venv uv run --env-file .env python main.py delete-collection     # xoá collection, không hỏi lại
+UV_PROJECT_ENVIRONMENT=../.venv uv run --env-file .env python main.py ask "<câu hỏi>"
+UV_PROJECT_ENVIRONMENT=../.venv uv run --env-file .env python main.py eval-ingestion        # không gọi API, exit 1 nếu store lệch docs
+UV_PROJECT_ENVIRONMENT=../.venv uv run --env-file .env python main.py eval-retrieval        # hit_rate@k, MRR, RAGAS; chậm, tốn quota
 ```
 
 ## Gotchas

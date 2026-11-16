@@ -21,7 +21,8 @@ Two pipelines that run on their own and share only the Chroma store on disk (`da
 
 ```sh
 cp .env.example .env   # then fill in OPENROUTER_API_KEY; other settings live in config.yaml
-uv venv && source .venv/bin/activate && uv pip install -r requirements.txt
+export UV_PROJECT_ENVIRONMENT=../.venv   # shared Lab venv, no per-repo .venv
+uv sync --inexact                        # install pyproject.toml + uv.lock
 uv run --env-file .env python main.py ingest
 uv run --env-file .env python main.py delete-collection   # drop the store; ingest builds it again
 uv run --env-file .env python main.py ask "Mỗi tuần được làm việc từ xa tối đa mấy ngày?"
